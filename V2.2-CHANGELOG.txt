@@ -1,0 +1,63 @@
+MINIMAL CHROMIUM BROWSER — V2.2 CHANGELOG
+Advanced Tab Ecosystem
+
+NEW
+- Tab Containers with independent Chromium storage sessions inside each profile.
+- Persistent custom containers isolate cookies, localStorage, IndexedDB and cache.
+- Temporary containers use non-persistent Electron sessions.
+- Guest profiles force all custom container sessions to be temporary.
+- Custom container names, icons and colors, displayed in the tab strip.
+- Automatic domain assignment with optional subdomain matching; the most-specific
+  matching rule wins.
+- Create a new tab directly inside a selected container.
+- Move tabs between containers from the tab context menu or Browser Hub.
+- Container quick-access button and Ctrl+K Command Center entries.
+- Container IDs are retained by persistent saved tabs, named sessions and recently
+  closed tabs.
+
+BEHAVIOR AND PRIVACY
+- New tabs inherit the active tab's container unless an automatic domain rule applies.
+- Duplicate tabs, popup tabs and translation tabs inherit their source container.
+- Manual Move to container reloads the tab once in the selected destination, without
+  immediately applying the same domain rule to move it back.
+- Temporary/Guest container tabs are excluded from persistent startup restore,
+  history, recently closed tabs, named sessions, diagnostics and download history.
+- Temporary cookies, site storage and cache are cleared when the app exits; downloaded
+  files themselves remain on disk.
+- Default container keeps using the existing profile session, preserving existing
+  website logins. Named persistent containers use profile-specific partitions.
+- Ad-block settings are refreshed for container sessions when changed.
+- Deleting a container moves its open tabs to Default, removes associated rules, and
+  clears the container's stored cookies/site data and cache.
+
+LIMITATIONS
+- Moving tabs reloads their URL and can lose unsaved form state and page JavaScript state.
+- Site permission choices, per-site preferences and password-vault entries remain
+  profile-wide, not independently configured per container.
+- Server redirects are not silently redirected into another container; rules apply to
+  typed navigation, URL-opened tabs and user-initiated top-level links.
+- Private tabs remain in the separate Private session and cannot be moved to a regular
+  or temporary tab container.
+- Temporary container downloads still write the selected file to disk; only browser
+  download-history metadata is transient.
+- Ad blocking and extension support in custom sessions depends on the installed
+  Electron APIs and optional Ghostery package availability.
+
+VALIDATION
+- All 12 JavaScript files passed Node syntax checks.
+- All 8 HTML documents passed local script, stylesheet and asset-reference checks;
+  all 6 CSS files passed local url() reference checks. No duplicate HTML IDs found.
+- The Browser Hub containers section is present in the panel navigation and is
+  explicitly allow-listed by the main-process IPC handler.
+- 13 isolated source-level assertions passed for domain normalization, invalid-domain
+  rejection, exact matching, subdomain rules, most-specific-rule priority, default
+  partition preservation, persistent vs non-persistent partitions, runtime partition
+  reuse, Guest-profile disposal and Private-tab classification.
+- Static checks confirm temporary-container URLs are excluded from persisted tabs,
+  saved named sessions and diagnostics, and the source bundle contains no package.json
+  or node_modules.
+- Electron Fiddle runtime behavior has not been launched in the build environment.
+  Run the first-run smoke test in README.txt for actual Chromium session and UI behavior.
+
+No package.json, node_modules, or installation scripts are included. Import the source
+files into the existing Electron Fiddle project as described in README.txt.

@@ -1,0 +1,16 @@
+{
+  "name": "placid-holiday-provide-d6gad",
+  "productName": "placid-holiday-provide-d6gad",
+  "description": "My Electron application description",
+  "keywords": [],
+  "main": "./main.js",
+  "version": "1.0.0",
+  "author": "samue",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "43.4.0"
+  }
+}

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-accent="blue">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimal Browser Settings</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <main class="settings-shell">
+    <header class="settings-header">
+      <div><p class="eyebrow">MINIMAL BROWSER · SETTINGS</p><h1>Settings</h1><p class="intro">Manage your browser, privacy, profiles, and personalization.</p></div>
+      <div class="settings-mark">M</div>
+    </header>
+
+    <aside class="settings-sidebar">
+      <label class="settings-search-wrap"><span>⌕</span><input id="settings-search" type="search" placeholder="Search settings" autocomplete="off" aria-label="Search settings"></label>
+      <p class="settings-nav-label">BROWSER SETTINGS</p>
+    <nav class="settings-nav" aria-label="Settings sections">
+      <a class="active" href="#appearance">Appearance</a><a href="#layout">Layout</a><a href="#personalization">Personalize</a><a href="#homepage">New tab</a><a href="#shortcuts">Shortcuts</a><a href="#behavior">Behavior</a><a href="#data">Backup</a><a href="#browser-tools">Browser tools</a>
+    </nav>      <p class="settings-nav-label settings-nav-label-tools">MORE BROWSER CONTROLS</p>
+      <div class="settings-tool-links">
+        <button type="button" data-open-hub="performance"><span>◴</span><span>Performance manager</span></button>
+        <button type="button" data-open-hub="profiles"><span>◉</span><span>Profiles</span></button>
+        <button type="button" data-open-hub="passwords"><span>▣</span><span>Password manager</span></button>
+        <button type="button" data-open-hub="adblock"><span>⬟</span><span>Ad blocker & privacy</span></button>
+        <button type="button" data-open-hub="sitecontrols"><span>⚙</span><span>Site permissions</span></button>
+        <button type="button" data-open-hub="extensions"><span>⌘</span><span>Extensions</span></button>
+        <button type="button" data-open-hub="migration"><span>⇄</span><span>Import & backup</span></button>
+      </div>
+      <div class="settings-sidebar-footer"><span class="settings-mark-small">M</span><span><strong>Minimal Browser</strong><small>Local settings</small></span></div>
+    </aside>
+    <div class="settings-main" id="settings-main">
+
+
+    <section class="settings-section" id="appearance">
+      <div class="section-title"><span>01</span><div><h2>Appearance</h2><p>Choose the atmosphere and visual personality of the browser.</p></div></div>
+      <div class="setting-grid">
+        <div class="setting-group"><label for="theme">Base appearance</label><select id="theme"><option value="dark">Dark</option><option value="light">Light</option></select></div>
+        <div class="setting-group"><label for="theme-preset">Color atmosphere</label><select id="theme-preset"><option value="graphite">Graphite</option><option value="midnight">Midnight blue</option><option value="nord">Nord</option><option value="forest">Forest</option><option value="sunset">Sunset</option><option value="paper">Paper</option><option value="ocean">Ocean</option><option value="lavender">Lavender</option><option value="ember">Ember</option></select></div>
+        <div class="setting-group"><label for="accent">Accent palette</label><select id="accent"><option value="blue">Blue</option><option value="violet">Violet</option><option value="green">Green</option><option value="orange">Orange</option><option value="rose">Rose</option><option value="cyan">Cyan</option><option value="amber">Amber</option><option value="coral">Coral</option></select></div>
+        <div class="setting-group"><label for="custom-accent">Custom accent color</label><div class="color-line"><input id="custom-accent" type="color" value="#93a9ff"><button id="clear-custom-accent" class="secondary-button" type="button">Use palette color</button></div></div>
+        <div class="setting-group"><label for="font-family">Interface font</label><select id="font-family"><option value="system">System default</option><option value="inter">Inter / Segoe UI</option><option value="arial">Arial</option><option value="georgia">Georgia</option><option value="mono">Monospace</option></select></div>
+        <div class="setting-group"><label for="corner-style">Corner style</label><select id="corner-style"><option value="sharp">Sharp</option><option value="soft">Soft</option><option value="rounded">Rounded</option></select></div>
+      </div>
+      <div class="preview-card"><div class="preview-browser"><div class="preview-tabs"><span class="preview-tab active"></span><span class="preview-tab"></span><span class="preview-tab"></span></div><div class="preview-bar"><i></i><i></i><i></i><b></b></div><div class="preview-content"><span></span><span></span><span></span></div></div><div><strong>Live style preview</strong><p>Your palette and shape choices define the browser's visual identity.</p></div></div>
+    </section>
+
+    <section class="settings-section" id="layout">
+      <div class="section-title"><span>02</span><div><h2>Layout and density</h2><p>Adjust the browser's spacing and visible controls. The Browser Hub opens as a full page rather than a side panel.</p></div></div>
+      <div class="setting-grid">
+        <div class="setting-group"><label for="density">Interface density</label><select id="density"><option value="compact">Compact</option><option value="comfortable">Comfortable</option><option value="spacious">Spacious</option></select></div>
+        <div class="setting-group"><label for="compact-tabs">Compact tab strip</label><select id="compact-tabs"><option value="false">Off</option><option value="true">On</option></select></div>
+      </div>
+      <div class="setting-group"><label>Toolbar buttons</label><p>Choose which tools stay visible beside the address bar.</p><div class="toggle-grid" id="toolbar-options">
+        <label><input type="checkbox" data-toolbar="bookmark"> Bookmarks</label><label><input type="checkbox" data-toolbar="split"> Split view</label><label><input type="checkbox" data-toolbar="downloads"> Downloads</label><label><input type="checkbox" data-toolbar="ai"> AI assistant</label><label><input type="checkbox" data-toolbar="library"> Browser library</label><label><input type="checkbox" data-toolbar="private"> Private tab</label><label><input type="checkbox" data-toolbar="command"> Command center</label><label><input type="checkbox" data-toolbar="reader"> Reader view</label><label><input type="checkbox" data-toolbar="capture"> Screenshot</label><label><input type="checkbox" data-toolbar="pdf"> PDF export</label><label><input type="checkbox" data-toolbar="mini"> Mini window</label><label><input type="checkbox" data-toolbar="translate"> Translate</label><label><input type="checkbox" data-toolbar="profile"> Profile switcher</label><label><input type="checkbox" data-toolbar="adblock"> Ad blocker shield</label><label><input type="checkbox" data-toolbar="settings"> Settings</label>
+      </div></div>
+      <div class="setting-group"><label>Motion</label><label class="switch-row"><span><strong>Interface animations</strong><small>Enable subtle hover, transition and loading animations.</small></span><input id="animations" type="checkbox"></label></div>
+    </section>
+
+    <section class="settings-section" id="homepage">
+      <div class="section-title"><span>03</span><div><h2>New-tab dashboard</h2><p>Personalize the page you see when opening a new tab.</p></div></div>
+      <div class="setting-grid">
+        <div class="setting-group"><label for="new-tab-background">Background preset</label><select id="new-tab-background"><option value="default">Match theme</option><option value="aurora">Aurora</option><option value="midnight">Midnight glow</option><option value="sunset">Sunset</option></select></div>
+        <div class="setting-group"><label for="search-engine">Default search engine</label><select id="search-engine"><option value="google">Google</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option></select></div>
+      </div>
+      <div class="setting-group"><label>Custom wallpaper</label><p>Choose a local image to use behind the new-tab dashboard.</p><div class="color-line"><button id="choose-wallpaper" type="button">Choose image…</button><button id="remove-wallpaper" class="secondary-button" type="button">Remove wallpaper</button></div><small id="wallpaper-status" class="status-text">No custom wallpaper selected.</small></div>
+      <div class="toggle-grid"><label><input id="show-clock" type="checkbox"> Show large clock</label><label><input id="show-favorites" type="checkbox"> Show bookmarked favorites</label><label><input id="show-recent" type="checkbox"> Show recently visited</label><label><input id="show-notes" type="checkbox"> Show quick notes</label><label><input id="show-sessions" type="checkbox"> Show saved sessions</label></div>
+    </section>
+
+
+    <section class="settings-section" id="personalization">
+      <div class="section-title"><span>04</span><div><h2>Personalization overhaul</h2><p>Give the browser its own name, tune its proportions, reorder controls and make the new-tab page feel like yours.</p></div></div>
+      <div class="setting-grid">
+        <div class="setting-group"><label for="browser-name">Browser name</label><input class="text-input" id="browser-name" maxlength="40" placeholder="Minimal Browser"></div>
+        <div class="setting-group"><label for="newtab-greeting">New-tab greeting</label><input class="text-input" id="newtab-greeting" maxlength="100" placeholder="What would you like to explore?"></div>
+        <div class="setting-group"><label for="newtab-layout">New-tab layout</label><select id="newtab-layout"><option value="cards">Balanced cards</option><option value="compact">Compact dashboard</option><option value="focus">Focus mode</option></select></div>
+        <div class="setting-group"><label for="tab-width">Tab width <output id="tab-width-value">210 px</output></label><input id="tab-width" type="range" min="140" max="280" step="5" value="210"></div>
+        <div class="setting-group"><label for="sidebar-width">Web panel width <output id="sidebar-width-value">356 px</output></label><input id="sidebar-width" type="range" min="280" max="520" step="10" value="356"></div>
+        <div class="setting-group"><label for="wallpaper-dim">Wallpaper overlay <output id="wallpaper-dim-value">62%</output></label><input id="wallpaper-dim" type="range" min="20" max="90" step="1" value="62"></div>
+      </div>
+      <div class="toggle-grid"><label><input id="mouse-gestures" type="checkbox"> Enable right-button mouse gestures</label><label><input id="workspace-dashboard" type="checkbox"> Show workspaces on new tabs</label></div>
+      <div class="setting-group"><label>Toolbar order</label><p>Use the arrows to arrange the toolbar buttons. Hidden buttons keep their saved position.</p><ol class="toolbar-order-list" id="toolbar-order-list">
+        <li data-order="bookmark"><span>Bookmarks</span><div><button type="button" data-move="up" aria-label="Move bookmarks up">↑</button><button type="button" data-move="down" aria-label="Move bookmarks down">↓</button></div></li>
+        <li data-order="split"><span>Split view</span><div><button type="button" data-move="up" aria-label="Move split view up">↑</button><button type="button" data-move="down" aria-label="Move split view down">↓</button></div></li>
+        <li data-order="command"><span>Command center</span><div><button type="button" data-move="up" aria-label="Move command center up">↑</button><button type="button" data-move="down" aria-label="Move command center down">↓</button></div></li>
+        <li data-order="reader"><span>Reader view</span><div><button type="button" data-move="up" aria-label="Move reader up">↑</button><button type="button" data-move="down" aria-label="Move reader down">↓</button></div></li>
+        <li data-order="capture"><span>Capture</span><div><button type="button" data-move="up" aria-label="Move capture up">↑</button><button type="button" data-move="down" aria-label="Move capture down">↓</button></div></li>
+        <li data-order="pdf"><span>PDF</span><div><button type="button" data-move="up" aria-label="Move PDF up">↑</button><button type="button" data-move="down" aria-label="Move PDF down">↓</button></div></li>
+        <li data-order="mini"><span>Mini window</span><div><button type="button" data-move="up" aria-label="Move mini window up">↑</button><button type="button" data-move="down" aria-label="Move mini window down">↓</button></div></li>
+        <li data-order="translate"><span>Translate</span><div><button type="button" data-move="up" aria-label="Move translate up">↑</button><button type="button" data-move="down" aria-label="Move translate down">↓</button></div></li>
+        <li data-order="downloads"><span>Downloads</span><div><button type="button" data-move="up" aria-label="Move downloads up">↑</button><button type="button" data-move="down" aria-label="Move downloads down">↓</button></div></li>
+        <li data-order="ai"><span>AI assistant</span><div><button type="button" data-move="up" aria-label="Move AI up">↑</button><button type="button" data-move="down" aria-label="Move AI down">↓</button></div></li>
+        <li data-order="library"><span>Browser library</span><div><button type="button" data-move="up" aria-label="Move library up">↑</button><button type="button" data-move="down" aria-label="Move library down">↓</button></div></li>
+        <li data-order="private"><span>Private tab</span><div><button type="button" data-move="up" aria-label="Move private up">↑</button><button type="button" data-move="down" aria-label="Move private down">↓</button></div></li>
+        <li data-order="profile"><span>Profile switcher</span><div><button type="button" data-move="up" aria-label="Move profile up">↑</button><button type="button" data-move="down" aria-label="Move profile down">↓</button></div></li>
+        <li data-order="adblock"><span>Ad blocker</span><div><button type="button" data-move="up" aria-label="Move ad blocker up">↑</button><button type="button" data-move="down" aria-label="Move ad blocker down">↓</button></div></li>
+        <li data-order="settings"><span>Settings</span><div><button type="button" data-move="up" aria-label="Move settings up">↑</button><button type="button" data-move="down" aria-label="Move settings down">↓</button></div></li>
+      </ol></div>
+    </section>
+    <section class="settings-section" id="shortcuts">
+      <div class="section-title"><span>05</span><div><h2>Keyboard shortcuts</h2><p>Customize shortcut keys. These use Ctrl (or Command on macOS), with Shift where specified.</p></div></div>
+      <div class="shortcut-grid">
+        <label>Command center <span>Ctrl +</span><input id="shortcut-command" maxlength="1" autocomplete="off"></label>
+        <label>Reader view <span>Ctrl + Shift +</span><input id="shortcut-reader" maxlength="1" autocomplete="off"></label>
+        <label>Page capture <span>Ctrl + Shift +</span><input id="shortcut-capture" maxlength="1" autocomplete="off"></label><label>Split view <span>Ctrl + Shift +</span><input id="shortcut-split" maxlength="1" autocomplete="off"></label><label>Downloads <span>Ctrl + Shift +</span><input id="shortcut-downloads" maxlength="1" autocomplete="off"></label><label>History <span>Ctrl + Shift +</span><input id="shortcut-history" maxlength="1" autocomplete="off"></label><label>Notes <span>Ctrl + Shift +</span><input id="shortcut-notes" maxlength="1" autocomplete="off"></label><label>Private tab <span>Ctrl + Shift +</span><input id="shortcut-private" maxlength="1" autocomplete="off"></label>
+      </div>
+      <p class="hint">Avoid changing these to keys already used by common browser shortcuts. Ctrl+L, Ctrl+T, Ctrl+W and Ctrl+R remain standard browser shortcuts.</p>
+    </section>
+
+    <section class="settings-section" id="behavior">
+      <div class="section-title"><span>06</span><div><h2>Browser behavior</h2><p>Fine-tune how pages load and how inactive tabs are handled.</p></div></div>
+      <div class="setting-grid">
+        <div class="setting-group"><label for="auto-sleep">Automatic tab sleeping</label><select id="auto-sleep"><option value="0">Disabled</option><option value="15">After 15 minutes</option><option value="30">After 30 minutes</option><option value="60">After 1 hour</option><option value="120">After 2 hours</option></select><p>Sleeping tabs reload when opened. Unsaved form state can be lost.</p></div>
+        <div class="setting-group"><label for="download-path">Download location</label><p id="download-path">System Downloads folder (change from Downloads panel).</p></div>
+      </div>
+      <div class="setting-group"><label class="switch-row"><span><strong>Cookie banner filtering</strong><small>Hide common cookie-consent banners using a basic selector filter. Some sites may be affected.</small></span><input id="cookie-banner-filtering" type="checkbox"></label></div>
+      <div class="setting-group"><label class="switch-row"><span><strong>Tracker blocking</strong><small>Use the browser's basic built-in tracker host list.</small></span><input id="tracker-blocking" type="checkbox"></label></div>
+    </section>
+
+    <section class="settings-section" id="data">
+      <div class="section-title"><span>07</span><div><h2>Backup and restore</h2><p>Move your personal browser setup or keep a safety copy.</p></div></div>
+      <div class="button-row"><button id="export-backup" type="button">Export browser backup</button><button id="import-backup" class="secondary-button" type="button">Import backup</button></div>
+      <p class="hint">Backups include workspaces, tabs saved for restoration, bookmarks, history, notes, collections, sessions and settings. AI API credentials are excluded.</p>
+    </section>
+
+    <section class="settings-section" id="browser-tools">
+      <div class="section-title"><span>08</span><div><h2>Browser tools and management</h2><p>Open the dedicated Browser Hub for features that manage your browsing data, privacy, extensions and profiles.</p></div></div>
+      <div class="settings-hub-grid">
+        <button type="button" data-open-hub="profiles"><span class="hub-card-icon">◉</span><span><strong>Profiles</strong><small>Manage separate browser profiles and guest sessions.</small></span><span class="hub-chevron">›</span></button>
+        <button type="button" data-open-hub="passwords"><span class="hub-card-icon">▣</span><span><strong>Password manager</strong><small>Open your encrypted local password vault.</small></span><span class="hub-chevron">›</span></button>
+        <button type="button" data-open-hub="adblock"><span class="hub-card-icon">⬟</span><span><strong>Ad blocker and privacy</strong><small>Manage filter lists, site exceptions and protection.</small></span><span class="hub-chevron">›</span></button>
+        <button type="button" data-open-hub="extensions"><span class="hub-card-icon">⌘</span><span><strong>Extensions</strong><small>Manage installed extensions and permissions.</small></span><span class="hub-chevron">›</span></button>
+        <button type="button" data-open-hub="sitecontrols"><span class="hub-card-icon">⚙</span><span><strong>Site permissions</strong><small>Review camera, microphone, location and site data access.</small></span><span class="hub-chevron">›</span></button>
+        <button type="button" data-open-hub="migration"><span class="hub-card-icon">⇄</span><span><strong>Import and backup</strong><small>Move bookmarks and create or restore browser backups.</small></span><span class="hub-chevron">›</span></button>
+        <button type="button" data-open-hub="services"><span class="hub-card-icon">◈</span><span><strong>Connected services</strong><small>Manage your browser's service shortcuts.</small></span><span class="hub-chevron">›</span></button>
+        <button type="button" data-open-hub="updates"><span class="hub-card-icon">↻</span><span><strong>Updates and about</strong><small>View browser version and update information.</small></span><span class="hub-chevron">›</span></button>
+      </div>
+    </section>
+
+    <footer class="settings-footer"><span id="save-status" role="status">Changes are saved when you click Save preferences.</span><button id="save-settings" type="button">Save preferences</button></footer>
+  </main>
+  <script src="settings.js"></script>
+</body>
+</html>

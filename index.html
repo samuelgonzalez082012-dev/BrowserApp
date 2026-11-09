@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-accent="blue" data-compact-tabs="false">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimal Browser</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="browser-chrome">
+    <div class="tab-strip">
+      <div class="workspace-indicator" id="workspace-indicator" title="Current workspace">Personal</div>
+      <button class="container-quick-button" id="container-quick-button" type="button" title="Current tab container · Manage containers">◉</button>
+      <div class="tabs" id="tabs" role="tablist" aria-label="Browser tabs"></div>
+      <button class="new-tab-button" id="new-tab-button" type="button" title="New tab (Ctrl+T)" aria-label="New tab">+</button>
+    </div>
+
+    <div class="toolbar">
+      <div class="navigation-controls">
+        <button class="toolbar-button" id="back-button" type="button" title="Back (Alt+Left)" aria-label="Back" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.5 12l7 7"/></svg>
+        </button>
+        <button class="toolbar-button" id="forward-button" type="button" title="Forward (Alt+Right)" aria-label="Forward" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 5 7 7-7 7"/></svg>
+        </button>
+        <button class="toolbar-button" id="home-button" type="button" title="New tab page" aria-label="New tab page">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3.5 10 8.5-7 8.5 7"/><path d="M5.5 9v11h13V9M9.5 20v-6h5v6"/></svg>
+        </button>
+        <button class="toolbar-button" id="reload-button" type="button" title="Reload" aria-label="Reload">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M19 12a7 7 0 1 1-2-4.95L20 12"/></svg>
+        </button>
+      </div>
+
+      <form class="address-form" id="address-form" autocomplete="off">
+        <svg class="address-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.2 4.2"/></svg>
+        <input id="address-input" type="text" spellcheck="false" placeholder="Search or enter address" aria-label="Search or enter address">
+        <button class="clear-address" id="clear-address" type="button" title="Clear address" aria-label="Clear address">×</button>
+      </form>
+
+      <div class="toolbar-actions" id="toolbar-actions">
+        <button class="toolbar-button" id="bookmark-button" type="button" title="Bookmark this page" aria-label="Bookmark this page">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-4-6 4Z"/></svg>
+        </button>
+        <button class="toolbar-button" id="split-button" type="button" title="Split-screen browsing" aria-label="Split-screen browsing">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>
+        </button>
+        <button class="toolbar-button" id="command-button" type="button" title="Command center (Ctrl+K)" aria-label="Command center">⌘</button>
+        <button class="toolbar-button" id="reader-button" type="button" title="Reader view" aria-label="Reader view">▤</button>
+        <button class="toolbar-button" id="capture-button" type="button" title="Capture webpage" aria-label="Capture webpage">▧</button>
+        <button class="toolbar-button" id="pdf-button" type="button" title="Save page as PDF" aria-label="Save page as PDF">PDF</button>
+        <button class="toolbar-button" id="mini-button" type="button" title="Open mini window" aria-label="Open mini window">↗</button>
+        <button class="toolbar-button" id="translate-button" type="button" title="Translate page" aria-label="Translate page">文</button>
+        <button class="toolbar-button" id="downloads-button" type="button" title="Downloads" aria-label="Downloads">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5"/><path d="M4 17v3h16v-3"/></svg>
+        </button>
+        <button class="toolbar-button" id="ai-button" type="button" title="AI assistant" aria-label="AI assistant">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 13.8 9l5.7 1.8-5.7 1.8-1.8 5.9-1.8-5.9-5.7-1.8L10.2 9Z"/><path d="m19 15 .9 2.6 2.1.7-2.1.7L19 22l-.9-3.1-2.1-.7 2.1-.7Z"/></svg>
+        </button>
+        <button class="toolbar-button" id="panel-button" type="button" title="Open Browser Hub" aria-label="Open Browser Hub" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 8h5M13 12h5M13 16h3"/></svg>
+        </button>
+        <button class="toolbar-button profile-toolbar-button" id="profile-button" type="button" title="Browser profiles" aria-label="Browser profiles">👤</button>
+        <button class="toolbar-button shield-toolbar-button" id="adblock-button" type="button" title="Privacy and ad blocking" aria-label="Privacy and ad blocking"><span class="shield-glyph">⬟</span><span class="shield-count" id="shield-count">0</span></button>
+        <button class="toolbar-button" id="private-button" type="button" title="New private tab" aria-label="New private tab">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10h14l1.5 8h-17Z"/><path d="M8 10 9.5 5h5L16 10M8 14h.01M16 14h.01"/></svg>
+        </button>
+        <button class="toolbar-button" id="settings-button" type="button" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1a1.7 1.7 0 0 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 0 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 0 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 0 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 0 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 0 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 0 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 0 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="tab-context-menu" id="tab-context-menu" hidden>
+    <button data-action="pin">Pin tab</button>
+    <button data-action="mute">Mute tab</button>
+    <button data-action="duplicate">Duplicate tab</button>
+    <div class="context-divider"></div>
+    <div class="context-menu-label">Move to container</div>
+    <div id="tab-container-options" class="tab-container-options"></div>
+    <button data-action="manage-containers">Manage containers…</button>
+    <div class="context-divider"></div>
+    <button data-action="close-right">Close tabs to the right</button>
+    <button data-action="close-others">Close other tabs</button>
+    <button data-action="close" class="danger-action">Close tab</button>
+  </div>
+
+  <div class="command-backdrop" id="command-backdrop" hidden>
+    <section class="command-dialog" role="dialog" aria-modal="true" aria-labelledby="command-title">
+      <div class="command-topline"><span class="command-kicker">BROWSER COMMAND CENTER</span><span class="command-shortcut">ESC TO CLOSE</span></div>
+      <label id="command-title" class="sr-only" for="command-input">Search tabs, websites and browser commands</label>
+      <input id="command-input" class="command-input" type="search" autocomplete="off" placeholder="Search tabs, bookmarks, history or commands…">
+      <div class="command-results" id="command-results"></div>
+      <footer class="command-footer"><span>↑ ↓ Navigate</span><span>ENTER Open</span><span>CTRL + K Close</span></footer>
+    </section>
+  </div>
+  <div class="chrome-toast" id="chrome-toast" role="status" aria-live="polite"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-accent="blue" data-background="default">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https: file:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Tab</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <main class="newtab-shell">
+    <div class="welcome-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="newtab-clock" id="newtab-clock" aria-label="Current time"></div>
+    <p class="eyebrow">YOUR SPACE, YOUR PACE</p>
+    <h1>What would you like to explore?</h1>
+    <p class="subtitle">Search the web or enter a website address above.</p>
+
+    <form id="newtab-search" class="newtab-search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.2 4.2"/></svg>
+      <input id="newtab-query" type="text" placeholder="Search the web" aria-label="Search the web" autocomplete="off" autofocus>
+      <button type="submit" aria-label="Search">Search</button>
+    </form>
+
+    <section class="dashboard-section" id="saved-section">
+      <div class="dashboard-heading"><h2>Quick access</h2><span>BOOKMARKS</span></div>
+      <div class="shortcut-grid" id="saved-links"></div>
+    </section>
+
+    <section class="dashboard-section" id="recent-section">
+      <div class="dashboard-heading"><h2>Recently visited</h2><span>HISTORY</span></div>
+      <div class="recent-list" id="recent-links"></div>
+    </section>
+
+    <section class="dashboard-section" id="notes-section"><div class="dashboard-heading"><h2>Quick notes</h2><span>NOTES</span></div><div class="note-grid" id="note-links"></div></section>
+
+    <section class="dashboard-section workspace-section" id="workspace-section">
+      <div class="dashboard-heading"><h2>Your workspaces</h2><span>SPACES</span></div>
+      <div class="workspace-shortcuts" id="workspace-links"></div>
+    </section>
+
+    <section class="dashboard-section" id="sessions-section">
+      <div class="dashboard-heading"><h2>Saved sessions</h2><span>RETURN TO A PROJECT</span></div>
+      <div class="session-grid" id="session-links"></div>
+    </section>
+
+    <div class="home-footer"><span>Minimal Browser</span><span>Keep it simple.</span></div>
+  </main>
+  <script src="newtab.js"></script>
+</body>
+</html>

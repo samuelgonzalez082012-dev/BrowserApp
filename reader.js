@@ -1,0 +1,15 @@
+'use strict';
+const params = new URLSearchParams(location.search);
+const title = params.get('title') || 'Untitled article';
+const url = params.get('url') || '';
+const text = params.get('text') || '';
+document.title = `Reader — ${title}`;
+document.getElementById('title').textContent = title;
+document.getElementById('source').textContent = url;
+const content = document.getElementById('content');
+text.split(/\n{2,}/).filter(Boolean).forEach((part) => { const p = document.createElement('p'); p.textContent = part.trim(); content.appendChild(p); });
+let fontSize = 19; let themeIndex = 0; const themes = ['light', 'sepia', 'dark'];
+document.getElementById('smaller').addEventListener('click', () => { fontSize = Math.max(14, fontSize - 1); content.style.fontSize = `${fontSize}px`; });
+document.getElementById('larger').addEventListener('click', () => { fontSize = Math.min(28, fontSize + 1); content.style.fontSize = `${fontSize}px`; });
+document.getElementById('theme').addEventListener('click', () => { themeIndex = (themeIndex + 1) % themes.length; document.documentElement.dataset.theme = themes[themeIndex]; });
+document.getElementById('copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(`${title}\n${url}\n\n${text}`); document.getElementById('copy').textContent = 'Copied'; } catch { document.getElementById('copy').textContent = 'Copy blocked'; } });

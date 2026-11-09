@@ -1,0 +1,46 @@
+MINIMAL CHROMIUM BROWSER — V2.1
+PERFORMANCE & RELIABILITY
+=========================
+
+New in this build
+-----------------
+- Process-aware Performance Manager powered by Electron app metrics.
+- Per-tab renderer PID, approximate memory/CPU, health and sleep status.
+- Automatic dashboard refresh every five seconds while Performance Manager
+  is visible. A manual Refresh measurements button is also available.
+- Renderer unresponsive/responsive status tracking.
+- One automatic renderer reload attempt, followed by a local retry page if
+  the automatic attempt fails or the renderer crashes again.
+- Unclean-shutdown marker and startup recovery notification.
+- Atomic JSON persistence using a temporary file + rename where supported.
+- Local diagnostics export with app, engine, process, tab-origin and health
+  event information; private tab data and full URL paths/query strings are
+  excluded. Inspect the JSON before sharing it.
+- Safe Mode restart temporarily skips extension loading and ad blocking.
+- Normal and Safe Mode restarts are recorded as intentional clean restarts
+  so they do not trigger a false unclean-shutdown warning.
+- Health state indicators on tabs.
+- Dedicated local renderer-crash recovery page with HTTP(S)-only retry.
+
+Where to find it
+----------------
+- Open Browser Hub and choose Performance manager.
+- Or open Settings and choose Performance manager in the Browser tools links.
+
+Safety and accuracy notes
+-------------------------
+- Per-tab metrics are approximate when Chromium shares one renderer process
+  between multiple tabs. System memory figures represent the whole computer.
+- Renderer recovery reloads a URL; it cannot restore unsaved form contents or
+  arbitrary in-page JavaScript state.
+- Safe Mode is a troubleshooting mode, not a security bypass. Website views
+  remain sandboxed and retain the normal navigation restrictions.
+- Diagnostics may reveal visited website origins, page titles, process names,
+  and OS details. Review an exported report before sending it to anyone.
+
+Validation
+----------
+- JavaScript syntax checks: run with node --check on every .js file.
+- Local HTML asset references: checked against the bundled source files.
+- Crash recovery page: HTTP(S)-only retry validation in the local page script.
+- Electron Fiddle live runtime: not run in this environment.

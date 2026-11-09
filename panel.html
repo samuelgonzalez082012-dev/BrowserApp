@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-accent="blue">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browser Hub</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="panel-header">
+    <div class="panel-brand"><span class="brand-mark">M</span><div><strong id="panel-heading">Workspaces</strong><small>Browser hub · Library, tools & controls</small></div></div>
+    <div class="panel-header-actions">
+      <button class="header-settings-button" id="open-settings-from-hub" type="button">Settings</button>
+      <button class="icon-button" id="close-panel" type="button" title="Return to browsing" aria-label="Return to browsing">×</button>
+    </div>
+  </header>
+  <nav class="section-nav" aria-label="Browser hub navigation">
+    <label class="nav-search-wrap"><span>⌕</span><input id="panel-filter" type="search" placeholder="Find a tool…" autocomplete="off" aria-label="Find a browser tool"></label>
+    <div class="nav-group"><span class="nav-group-title">YOUR BROWSER</span>
+      <button data-section="workspaces" class="active" type="button">▦ <span>Workspaces</span></button>
+      <button data-section="groups" type="button">▤ <span>Tab groups</span></button>
+      <button data-section="containers" type="button">◉ <span>Tab containers</span></button>
+      <button data-section="sessions" type="button">◷ <span>Saved sessions</span></button>
+      <button data-section="journeys" type="button">⌁ <span>Browsing journeys</span></button>
+      <button data-section="profiles" type="button">◉ <span>Profiles</span></button>
+    </div>
+    <div class="nav-group"><span class="nav-group-title">LIBRARY</span>
+      <button data-section="bookmarks" type="button">☆ <span>Bookmarks</span></button>
+      <button data-section="history" type="button">◴ <span>History</span></button>
+      <button data-section="downloads" type="button">↓ <span>Downloads</span></button>
+      <button data-section="notes" type="button">✎ <span>Notes</span></button>
+      <button data-section="collections" type="button">▣ <span>Collections</span></button>
+    </div>
+    <div class="nav-group"><span class="nav-group-title">PRODUCTIVITY</span>
+      <button data-section="split" type="button">◫ <span>Split screen</span></button>
+      <button data-section="ai" type="button">✧ <span>AI assistant</span></button>
+      <button data-section="tools" type="button">⌘ <span>Research tools</span></button>
+      <button data-section="webpanels" type="button">▥ <span>Web panels</span></button>
+      <button data-section="services" type="button">◈ <span>Connected services</span></button>
+      <button data-section="automations" type="button">↗ <span>Automations</span></button>
+    </div>
+    <div class="nav-group"><span class="nav-group-title">PRIVACY & SECURITY</span>
+      <button data-section="privacy" type="button">◉ <span>Privacy</span></button>
+      <button data-section="adblock" type="button">⬟ <span>Ad blocker</span></button>
+      <button data-section="passwords" type="button">▣ <span>Password manager</span></button>
+      <button data-section="sitecontrols" type="button">⚙ <span>Site permissions</span></button>
+    </div>
+    <div class="nav-group"><span class="nav-group-title">ADVANCED</span>
+      <button data-section="extensions" type="button">⌘ <span>Extensions</span></button>
+      <button data-section="apps" type="button">▣ <span>Installed web apps</span></button>
+      <button data-section="performance" type="button">◴ <span>Performance</span></button>
+      <button data-section="notifications" type="button">♧ <span>Notifications</span></button>
+      <button data-section="migration" type="button">⇄ <span>Import & backup</span></button>
+      <button data-section="accessibility" type="button">◐ <span>Accessibility</span></button>
+      <button data-section="developer" type="button">⌘ <span>Developer tools</span></button>
+      <button data-section="updates" type="button">↻ <span>Updates</span></button>
+      <button data-section="about" type="button">ⓘ <span>About</span></button>
+    </div>
+  </nav>
+  <main id="panel-content" class="panel-content" aria-live="polite"></main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="panel.js"></script>
+</body>
+</html>

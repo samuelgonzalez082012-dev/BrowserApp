@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page recovery · Minimal Browser</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "Segoe UI", Arial, sans-serif; background: #111318; color: #eef0f6; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body { min-height: 100vh; display: grid; place-items: center; padding: 28px; background: radial-gradient(circle at 50% 20%, #242a3a, #111318 58%); }
+    main { width: min(560px, 100%); padding: 34px; border: 1px solid #343947; border-radius: 20px; background: rgba(25, 28, 36, .96); box-shadow: 0 24px 80px rgba(0,0,0,.28); }
+    .mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; background: rgba(235, 167, 91, .13); color: #f0b46c; font-size: 24px; }
+    h1 { margin: 22px 0 8px; font-size: 25px; letter-spacing: -.6px; }
+    p { color: #aeb4c2; line-height: 1.6; font-size: 14px; }
+    #page-title { color: #e6e8ed; font-weight: 600; overflow-wrap: anywhere; }
+    #page-address { color: #8e98aa; font-size: 12px; overflow-wrap: anywhere; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    button { border: 1px solid #424b60; border-radius: 10px; padding: 11px 16px; background: #282f40; color: #f5f6fa; font: inherit; cursor: pointer; }
+    button.primary { background: #8fa7ff; border-color: #8fa7ff; color: #11182c; font-weight: 650; }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    .hint { margin-top: 22px; padding-top: 16px; border-top: 1px solid #343947; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true">↻</div>
+    <h1>This page stopped working</h1>
+    <p id="summary">The page's renderer stopped unexpectedly. You can try loading it again.</p>
+    <p id="page-title"></p>
+    <p id="page-address"></p>
+    <div class="actions">
+      <button class="primary" id="retry" type="button" disabled>Reload page</button>
+      <button id="back" type="button">Return to browser</button>
+    </div>
+    <p class="hint">Minimal Browser attempted one automatic recovery. If the page continues to crash, try closing other tabs or opening it again later. Your other tabs are unaffected unless they shared the same crashed renderer process.</p>
+  </main>
+  <script src="crash.js"></script>
+</body>
+</html>

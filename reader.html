@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: https:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reader view</title>
+  <link rel="stylesheet" href="reader.css">
+</head>
+<body>
+  <main class="reader-shell">
+    <div class="reader-toolbar"><span class="reader-label">READER VIEW</span><button id="smaller" type="button">A−</button><button id="larger" type="button">A+</button><button id="theme" type="button">Change theme</button><button id="copy" type="button">Copy text</button></div>
+    <article class="reader-article"><p id="source" class="source"></p><h1 id="title"></h1><div id="content" class="article-content"></div></article>
+  </main>
+  <script src="reader.js"></script>
+</body>
+</html>
