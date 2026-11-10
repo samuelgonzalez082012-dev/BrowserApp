@@ -49,6 +49,7 @@ const FILES = {
 };
 
 const SEARCH_ENGINES = {
+  brave: (q) => `https://search.brave.com/search?q=${encodeURIComponent(q)}`,
   google: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`,
   duckduckgo: (q) => `https://duckduckgo.com/?q=${encodeURIComponent(q)}`,
   bing: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}`
@@ -89,7 +90,7 @@ const TRACKER_HOSTS = [
 const DEFAULT_SETTINGS = {
   theme: 'dark',
   accent: 'blue',
-  searchEngine: 'google',
+  searchEngine: 'brave',
   trackerBlocking: false,
   downloadPath: '',
   aiEndpoint: 'https://api.openai.com/v1/chat/completions',
@@ -500,7 +501,7 @@ function readPersistence() {
     ...DEFAULT_SETTINGS,
     theme: savedSettings.theme === 'light' ? 'light' : 'dark',
     accent: Object.hasOwn(ACCENTS, savedSettings.accent) ? savedSettings.accent : 'blue',
-    searchEngine: typeof savedSettings.searchEngine === 'string' ? savedSettings.searchEngine : 'google',
+    searchEngine: typeof savedSettings.searchEngine === 'string' && (Object.hasOwn(SEARCH_ENGINES, savedSettings.searchEngine) || (Array.isArray(savedSettings.customSearchEngines) && savedSettings.customSearchEngines.some((engine) => engine.id === savedSettings.searchEngine))) ? savedSettings.searchEngine : 'brave',
     trackerBlocking: Boolean(savedSettings.trackerBlocking),
     downloadPath: typeof savedSettings.downloadPath === 'string' ? savedSettings.downloadPath : '',
     aiEndpoint: typeof savedSettings.aiEndpoint === 'string' ? savedSettings.aiEndpoint : DEFAULT_SETTINGS.aiEndpoint,
