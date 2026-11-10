@@ -24,7 +24,7 @@ function inspectJson(source) {
   return { kind, keys, pretty: JSON.stringify(value, null, 2), bytes: Buffer.byteLength(text, 'utf8') };
 }
 function summarizePageStructure(input = {}) {
-  const headings = Array.isArray(input.headings) ? input.headings.slice(0, 300).map((item) => ({ level: Math.min(6, Math.max(1, Number(item.level) || 1), text: String(item.text || '').slice(0, 500) })) : [];
+  const headings = Array.isArray(input.headings) ? input.headings.slice(0, 300).map((item) => ({ level: Math.min(6, Math.max(1, Number(item.level) || 1)), text: String(item.text || '').slice(0, 500) })) : [];
   const links = Array.isArray(input.links) ? input.links.slice(0, 500).map((item) => ({ text: String(item.text || '').slice(0, 300), url: String(item.url || '').slice(0, 2048) })) : [];
   const images = Array.isArray(input.images) ? input.images.slice(0, 300).map((item) => ({ alt: String(item.alt || '').slice(0, 300), src: String(item.src || '').slice(0, 2048) })) : [];
   return { title: String(input.title || '').slice(0, 300), url: String(input.url || '').slice(0, 2048), headings, links, images, counts: { headings: headings.length, links: links.length, images: images.length, forms: Math.max(0, Number(input.forms) || 0), tables: Math.max(0, Number(input.tables) || 0) } };
