@@ -109,9 +109,9 @@ test('Chromium tab handle owns navigation, view hosting and cleanup', async () =
   manager.register(new ChromiumEngineAdapter(FakeView));
   const tab = manager.createTab({ contextId: 'persist:test', preferences: { spellcheckEnabled: false } });
   assert.equal(FakeView.instances.at(-1).options.webPreferences.partition, 'persist:test');
-  assert.equal(FakeView.last.options.webPreferences.nodeIntegration, false);
-  assert.equal(FakeView.last.options.webPreferences.sandbox, true);
-  assert.equal(FakeView.last.options.webPreferences.spellcheck, false);
+  assert.equal(FakeView.instances.at(-1).options.webPreferences.nodeIntegration, false);
+  assert.equal(FakeView.instances.at(-1).options.webPreferences.sandbox, true);
+  assert.equal(FakeView.instances.at(-1).options.webPreferences.spellcheck, false);
   const window = new FakeWindow();
 
   assert.equal(tab.getURL(), 'https://example.com/');
