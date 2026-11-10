@@ -16,6 +16,7 @@ function normalizeWebUrl(value) {
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     throw new Error('For safety, Firefox POC navigation is limited to HTTP and HTTPS websites.');
   }
+  if (parsed.username || parsed.password) throw new Error('Website addresses containing embedded credentials are not accepted.');
   return parsed.href;
 }
 
@@ -54,7 +55,7 @@ class FirefoxEngineTab extends EventEmitter {
     this.client.on('browsingContext.navigationStarted', (params) => {
       if (!belongsToTab(params)) return;
       this._loading = true;
-      if (params.url) this._url = params.url;
+      if (params.url) this._recordUrl(params.url);
       this.emit('loading-started');
     });
     this.client.on('browsingContext.navigationCommitted', (params) => {
@@ -64,7 +65,8 @@ class FirefoxEngineTab extends EventEmitter {
       this.emit('navigated', url);
     });
     this.client.on('browsingContext.domContentLoaded', (params) => {
-      if (belongsToTab(params)) this._refreshTitle();
+      if (!belongsToTab(params)) return;
+      this._refreshTitle();
       this.emit('dom-ready');
     });
     this.client.on('browsingContext.load', (params) => {
@@ -100,13 +102,17 @@ class FirefoxEngineTab extends EventEmitter {
   }
 
   _recordUrl(url) {
-    if (!url || url === this._url) return;
-    this._url = url;
-    if (this._history[this._historyIndex] !== url) {
-      this._history = this._history.slice(0, this._historyIndex + 1);
-      this._history.push(url);
-      this._historyIndex = this._history.length - 1;
+    if (!url) return;
+    const existingIndex = this._history.indexOf(url);
+    if (existingIndex >= 0) {
+      this._historyIndex = existingIndex;
+      this._url = url;
+      return;
     }
+    this._history = this._history.slice(0, this._historyIndex + 1);
+    this._history.push(url);
+    this._historyIndex = this._history.length - 1;
+    this._url = url;
   }
 
   async _refreshTitle() {
@@ -165,7 +171,6 @@ class FirefoxEngineTab extends EventEmitter {
     if (this.isDestroyed()) throw new Error('The Firefox tab is closed.');
     const safeUrl = normalizeWebUrl(url);
     this._loading = true;
-    this._url = safeUrl;
     return this.client.navigate(this.contextId, safeUrl);
   }
 
@@ -174,7 +179,6 @@ class FirefoxEngineTab extends EventEmitter {
     if (this.isDestroyed()) throw new Error('The Firefox tab is closed.');
     const url = new URL(pathToFileURL(path.resolve(filePath)).href);
     for (const [key, value] of Object.entries(options.query || {})) url.searchParams.set(key, String(value));
-    this._url = url.href;
     this._loading = true;
     return this.client.navigate(this.contextId, url.href);
   }
