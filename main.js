@@ -21,6 +21,7 @@ const { fileURLToPath, pathToFileURL } = require('node:url');
 const { PasswordVault } = require('./password-vault');
 const { EngineManager } = require('./engine-adapters/engine-manager');
 const { ChromiumEngineAdapter } = require('./engine-adapters/chromium-engine');
+const { normalizeContainerDomain, resolveContainerForUrl: resolveContainerRoute } = require('./container-routing');
 
 const WINDOW_WIDTH = 1360;
 const WINDOW_HEIGHT = 900;
@@ -386,19 +387,9 @@ function getCurrentProfile() {
 function getTabContainer(containerId = 'default') {
   return (data.tabContainers || []).find((item) => item.id === String(containerId)) || (data.tabContainers || []).find((item) => item.id === 'default') || { id: 'default', name: 'Default', icon: '🌐', color: '#93a9ff', temporary: false };
 }
-function normalizeContainerDomain(value) {
-  let input = String(value || '').trim().toLowerCase();
-  if (!input) return '';
-  input = input.replace(/^https?:\/\//, '').split(/[/?#:]/)[0].replace(/^\*\./, '').replace(/^\./, '').replace(/\.$/, '');
-  if (!input || input.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(input)) return '';
-  return input;
-}
+
 function resolveContainerForUrl(url, fallbackId = 'default') {
-  let hostname = '';
-  try { hostname = new URL(url).hostname.toLowerCase(); } catch { return getTabContainer(fallbackId).id; }
-  const matches = (data.containerRules || []).filter((rule) => rule.enabled !== false && (hostname === rule.domain || (rule.includeSubdomains !== false && hostname.endsWith(`.${rule.domain}`))))
-    .sort((a, b) => b.domain.length - a.domain.length);
-  return matches.length ? matches[0].containerId : getTabContainer(fallbackId).id;
+  return resolveContainerRoute(url, data.containerRules || [], data.tabContainers || [], fallbackId);
 }
 function getContainerPartition(containerId = 'default') {
   const container = getTabContainer(containerId);
