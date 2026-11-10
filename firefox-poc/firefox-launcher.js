@@ -9,23 +9,22 @@ function resolveFirefoxExecutable(options = {}) {
   const platform = options.platform || process.platform;
   const env = options.env || process.env;
   const existsSync = options.existsSync || fs.existsSync;
+  const pathApi = platform === 'win32' ? path.win32 : path;
   const candidates = [];
 
   if (env.FIREFOX_PATH) candidates.push(env.FIREFOX_PATH);
   if (platform === 'win32') {
     for (const root of [env.PROGRAMFILES, env['PROGRAMFILES(X86)'], env.LOCALAPPDATA]) {
-      if (root) candidates.push(path.join(root, 'Mozilla Firefox', 'firefox.exe'));
+      if (root) candidates.push(pathApi.join(root, 'Mozilla Firefox', 'firefox.exe'));
     }
   } else if (platform === 'darwin') {
     candidates.push('/Applications/Firefox.app/Contents/MacOS/firefox');
-    candidates.push(path.join(env.HOME || '', 'Applications/Firefox.app/Contents/MacOS/firefox'));
+    candidates.push(pathApi.join(env.HOME || '', 'Applications/Firefox.app/Contents/MacOS/firefox'));
   } else {
     candidates.push('/usr/bin/firefox', '/usr/bin/firefox-esr', '/snap/bin/firefox');
   }
 
-  const found = candidates.find((candidate) => candidate && existsSync(candidate));
-  if (found) return found;
-  return null;
+  return candidates.find((candidate) => candidate && existsSync(candidate)) || null;
 }
 
 async function reserveLoopbackPort() {
@@ -43,7 +42,7 @@ class FirefoxLauncher {
   constructor({ profileRoot, executable = null, spawnProcess = spawn, platform = process.platform } = {}) {
     if (!profileRoot) throw new TypeError('FirefoxLauncher requires a dedicated profileRoot.');
     this.profileRoot = path.resolve(profileRoot);
-    this.executable = executable || resolveFirefoxExecutable();
+    this.executable = executable || resolveFirefoxExecutable({ platform });
     this.spawnProcess = spawnProcess;
     this.platform = platform;
     this.child = null;
@@ -55,7 +54,7 @@ class FirefoxLauncher {
     if (this.platform !== 'win32') {
       throw new Error('The Firefox embedding proof of concept currently supports Windows only.');
     }
-    if (this.child && this.child.exitCode === null) {
+    if (this.child && this.child.exitCode === null && !this.child.killed) {
       throw new Error('The managed Firefox instance is already running.');
     }
     if (!this.executable || !fs.existsSync(this.executable)) {
@@ -90,7 +89,8 @@ class FirefoxLauncher {
       };
       this.child.once('error', onError);
       this.child.once('exit', onExit);
-      setTimeout(() => { cleanup(); resolve(); }, 350);
+      const timer = setTimeout(() => { cleanup(); resolve(); }, 350);
+      timer.unref?.();
     });
 
     return {
