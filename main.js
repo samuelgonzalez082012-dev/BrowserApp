@@ -24,6 +24,7 @@ const { ChromiumEngineAdapter } = require('./engine-adapters/chromium-engine');
 const { normalizeContainerDomain, resolveContainerForUrl: resolveContainerRoute } = require('./container-routing');
 const { DownloadQueue } = require('./download-queue');
 const researchLibrary = require('./research-library');
+const themeStudio = require('./theme-studio');
 
 const WINDOW_WIDTH = 1360;
 const WINDOW_HEIGHT = 900;
@@ -177,6 +178,8 @@ function defaultData() {
     notes: [],
     collections: [],
     researchItems: [],
+    themeProfiles: [],
+    workspaceThemeProfiles: {},
     sessions: [],
     webPanels: [],
     customCommands: [],
@@ -208,6 +211,7 @@ let splitRatio = 0.5;
 let nextTabNumber = 1;
 let panelVisible = false;
 let activePanelSection = 'workspaces';
+let previewThemeProfileId = '';
 let settings = { ...DEFAULT_SETTINGS };
 let data = defaultData();
 let settingsFile = null;
@@ -632,6 +636,8 @@ function readPersistence() {
     notes: Array.isArray(savedData.notes) ? savedData.notes.filter((item) => item && typeof item.id === 'string' && typeof item.content === 'string').slice(0, 1000) : [],
     collections: Array.isArray(savedData.collections) ? savedData.collections.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.items)).slice(0, 300) : [],
     researchItems: researchLibrary.sanitizeStoredItems(savedData.researchItems),
+    themeProfiles: themeStudio.sanitizeThemeProfiles(savedData.themeProfiles),
+    workspaceThemeProfiles: savedData.workspaceThemeProfiles && typeof savedData.workspaceThemeProfiles === 'object' && !Array.isArray(savedData.workspaceThemeProfiles) ? Object.fromEntries(Object.entries(savedData.workspaceThemeProfiles).filter(([workspaceId, themeId]) => safeWorkspacesWithFallback.some((workspace) => workspace.id === workspaceId) && typeof themeId === 'string')) : {},
     sessions: Array.isArray(savedData.sessions) ? savedData.sessions.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.tabs)).slice(0, 100) : [],
     webPanels: Array.isArray(savedData.webPanels) ? savedData.webPanels.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && isSafeWebUrl(item.url)).slice(0, 50) : [],
     customCommands: Array.isArray(savedData.customCommands) ? savedData.customCommands.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.actions)).slice(0, 100) : [],
@@ -942,7 +948,10 @@ function getPublicState() {
     activeOrigin,
     permissions: getSitePermissionState(activeOrigin),
     recentlyClosed: recentlyClosed.slice(0, MAX_RECENTLY_CLOSED).map((item) => ({ title: item.title, url: item.url, workspaceId: item.workspaceId, containerId: item.containerId || 'default' })),
-    settings: { ...settings, hasAiKey: Boolean(aiKeyEncrypted) },
+    settings: { ...themeStudio.resolveWorkspaceTheme(settings, data.themeProfiles, data.workspaceThemeProfiles, data.activeWorkspaceId, previewThemeProfileId), hasAiKey: Boolean(aiKeyEncrypted) },
+    themeProfiles: (data.themeProfiles || []).map((profile) => ({ ...profile })),
+    workspaceThemeProfiles: { ...(data.workspaceThemeProfiles || {}) },
+    themePreviewActive: Boolean(previewThemeProfileId),
     defaultEngine: browserEngineManager.defaultEngineId,
     availableEngines: browserEngineManager.listEngines()
   };
@@ -3757,6 +3766,26 @@ async function exportResearchLibrary(format = 'json') {
   return { ok: true, path: result.filePath };
 }
 
+async function exportThemeProfile(profileId) {
+  const profile = (data.themeProfiles || []).find((item) => item.id === String(profileId));
+  if (!profile) return { ok: false, error: 'Theme profile not found.' };
+  const result = await dialog.showSaveDialog(mainWindow, { title: 'Export theme profile', defaultPath: profile.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json', filters: [{ name: 'Theme profile', extensions: ['json'] }] });
+  if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
+  fs.writeFileSync(result.filePath, JSON.stringify(profile, null, 2), 'utf8');
+  return { ok: true, path: result.filePath };
+}
+async function importThemeProfile() {
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Import theme profile', properties: ['openFile'], filters: [{ name: 'Theme profile', extensions: ['json'] }] });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8'));
+    const clean = themeStudio.normalizeThemeProfile(parsed);
+    clean.id = makeId('theme');
+    data.themeProfiles = [...(data.themeProfiles || []), clean].slice(-100);
+    saveData(); sendState(); return { ok: true, profile: clean };
+  } catch (error) { return { ok: false, error: 'Invalid theme profile: ' + error.message }; }
+}
+
 async function runPanelAction(action, payload = {}) {
   const adblockActions = new Set(['toggle-adblock', 'adblock-lists', 'adblock-update', 'adblock-whitelist-toggle', 'adblock-add-host', 'adblock-remove-host', 'adblock-add-list', 'adblock-remove-list', 'set-adblock-auto-update']);
   if (safeMode && adblockActions.has(action)) return { ok: false, error: 'Ad blocking controls are temporarily disabled in Safe Mode. Restart normally to restore filtering.' };
@@ -3771,6 +3800,37 @@ async function runPanelAction(action, payload = {}) {
       for (const tab of tabs) if (tab.groupId === groupId) tab.groupId = null;
       saveData(); sendState(); return { ok: true };
     }
+    case 'create-theme-profile': {
+      try {
+        const profile = themeStudio.normalizeThemeProfile({ ...payload, id: makeId('theme') });
+        data.themeProfiles = [...(data.themeProfiles || []), profile].slice(-100);
+        saveData(); sendState(); return { ok: true, profile };
+      } catch (error) { return { ok: false, error: error.message }; }
+    }
+    case 'preview-theme-profile': {
+      const profile = (data.themeProfiles || []).find((item) => item.id === String(payload.id));
+      if (!profile) return { ok: false, error: 'Theme profile not found.' };
+      previewThemeProfileId = profile.id; sendState(); return { ok: true };
+    }
+    case 'cancel-theme-preview': previewThemeProfileId = ''; sendState(); return { ok: true };
+    case 'assign-theme-profile': {
+      const workspaceId = String(payload.workspaceId || data.activeWorkspaceId);
+      const profileId = String(payload.id || '');
+      if (!data.workspaces.some((item) => item.id === workspaceId)) return { ok: false, error: 'Workspace not found.' };
+      if (!data.themeProfiles.some((item) => item.id === profileId)) return { ok: false, error: 'Theme profile not found.' };
+      data.workspaceThemeProfiles ||= {}; data.workspaceThemeProfiles[workspaceId] = profileId;
+      previewThemeProfileId = ''; saveData(); sendState(); return { ok: true };
+    }
+    case 'reset-workspace-theme': delete (data.workspaceThemeProfiles || {})[String(payload.workspaceId || data.activeWorkspaceId)]; previewThemeProfileId = ''; saveData(); sendState(); return { ok: true };
+    case 'delete-theme-profile': {
+      const id = String(payload.id);
+      data.themeProfiles = (data.themeProfiles || []).filter((item) => item.id !== id);
+      for (const [workspaceId, themeId] of Object.entries(data.workspaceThemeProfiles || {})) if (themeId === id) delete data.workspaceThemeProfiles[workspaceId];
+      if (previewThemeProfileId === id) previewThemeProfileId = '';
+      saveData(); sendState(); return { ok: true };
+    }
+    case 'export-theme-profile': return exportThemeProfile(payload.id);
+    case 'import-theme-profile': return importThemeProfile();
     case 'capture-research-article': return captureResearchArticle();
     case 'open-research-item': return openResearchItem(payload.id);
     case 'delete-research-item':

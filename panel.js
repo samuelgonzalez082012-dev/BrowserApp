@@ -19,7 +19,7 @@ const SECTION_NAMES = {
   performance: 'Performance manager', webpanels: 'Web panels', notifications: 'Notifications', tools: 'Research tools',
   profiles: 'Browser profiles', migration: 'Import and backup', sitecontrols: 'Site controls', apps: 'Installed web apps',
   accessibility: 'Accessibility and translation', developer: 'Developer tools', updates: 'Browser updates', adblock: 'Ad blocker',
-  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', research: 'Research library', about: 'About Minimal Browser'
+  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', research: 'Research library', themes: 'Personalization studio', about: 'About Minimal Browser'
 };
 
 function escapeHtml(value) {
@@ -467,6 +467,15 @@ function renderAbout() {
   return `<section class="section-block"><div class="about-hero"><strong>Minimal Browser 2.2</strong><p>A local-first Chromium productivity browser. Profiles, workspaces, tab containers, password vault, bookmarks, notes, sessions and preferences stay on this device unless you explicitly open a connected website or configure an AI provider.</p></div></section><section class="section-block"><div class="section-heading"><div><strong>V2.2 — Advanced Tab Ecosystem</strong><p>Separate browsing contexts with persistent or temporary container sessions, custom identities, per-domain routing and easy tab movement.</p></div></div><div class="feature-list"><article class="feature-card"><strong>Isolated site sessions</strong><p>Persistent containers use separate Chromium partitions for cookies, local storage, IndexedDB, cache and website logins.</p></article><article class="feature-card"><strong>Temporary containers</strong><p>Temporary container site data is not persisted. Its URLs are excluded from persistent history, tab restore, diagnostics, and download history.</p></article><article class="feature-card"><strong>Automatic assignment</strong><p>Domain rules route typed URLs and user-initiated top-level navigation into the most specific matching container.</p></article><article class="feature-card"><strong>Tab controls</strong><p>Open tabs in a container, move tabs from the tab context menu, and manage containers from Browser Hub.</p></article></div></section><section class="section-block"><div class="section-heading"><div><strong>Local-first promise</strong><p>Cloud synchronization has deliberately been left out. There is no browser account or cross-device sync system in this build.</p></div></div><div class="vault-warning">Important: moving a tab reloads it and may lose unsaved page state. Some site permissions and password vault credentials remain profile-wide, not container-specific. AI requests send page text to your configured provider only when you submit a request.</div></section><section class="section-block"><strong>Technical details</strong><p class="muted-note">Product version label: 2.2.0 · Electron / Chromium engine · Local profile storage · No package manifest included for Electron Fiddle.</p>${actionButton('Open browser updates','open-updates')}</section>`;
 }
 
+function renderThemeStudio() {
+  const profiles = state.themeProfiles || [];
+  const workspaceOptions = (state.workspaces || []).map((workspace) => `<option value="${escapeHtml(workspace.id)}" ${workspace.id === state.activeWorkspaceId ? 'selected' : ''}>${escapeHtml(workspace.name)}</option>`).join('');
+  const profileOptions = profiles.map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)}</option>`).join('');
+  const rows = profiles.map((profile) => `<article class="feature-card"><div class="section-heading"><div><strong>${escapeHtml(profile.name)}</strong><p>${escapeHtml(profile.themePreset)} · ${escapeHtml(profile.theme)} · ${escapeHtml(profile.density)}</p></div></div><div class="button-line">${actionButton('Preview','preview-theme-profile',profile.id)} ${actionButton('Assign to workspace','assign-theme-profile',profile.id)} ${actionButton('Export','export-theme-profile',profile.id)} ${actionButton('Delete','delete-theme-profile',profile.id,'danger-button')}</div></article>`).join('');
+  const assigned = state.workspaceThemeProfiles?.[state.activeWorkspaceId] || '';
+  return `<section class="section-block"><div class="section-heading"><div><strong>Workspace appearance profiles</strong><p>Create reusable visual profiles, preview them, then assign them to individual workspaces. Theme documents use a validated schema and cannot execute CSS or scripts.</p></div></div><div class="inline-form"><select id="theme-workspace-target">${workspaceOptions}</select><select id="theme-profile-target"><option value="">Choose profile</option>${profileOptions}</select>${actionButton('Assign','assign-selected-theme')}</div><div class="button-line">${actionButton('Reset workspace appearance','reset-workspace-theme','','danger-button')} ${actionButton('Import theme','import-theme-profile')}</div>${state.themePreviewActive ? '<p class="muted-note">Preview is active and has not been assigned. Apply it to keep the appearance, or cancel to roll back.</p><div class="button-line">'+actionButton('Apply preview','apply-theme-preview','')+' '+actionButton('Cancel preview','cancel-theme-preview')+'</div>' : ''}</section><section class="section-block"><div class="section-heading"><div><strong>Create a theme profile</strong><p>CSS variables are restricted to a safe allow-list of color tokens.</p></div></div><div class="setting-grid"><label>Profile name<input id="theme-profile-name" class="full-input" maxlength="48" placeholder="e.g. Work"></label><label>Theme<select id="theme-profile-theme" class="full-input"><option value="dark">Dark</option><option value="light">Light</option></select></label><label>Preset<select id="theme-profile-preset" class="full-input">${['graphite','midnight','nord','forest','sunset','paper','ocean','lavender','ember'].map((x)=>`<option value="${x}">${x}</option>`).join('')}</select></label><label>Accent<select id="theme-profile-accent" class="full-input">${['blue','violet','green','orange','rose','cyan','amber','coral'].map((x)=>`<option value="${x}">${x}</option>`).join('')}</select></label><label>Density<select id="theme-profile-density" class="full-input"><option>comfortable</option><option>compact</option><option>spacious</option></select></label><label>Corners<select id="theme-profile-corners" class="full-input"><option>soft</option><option>sharp</option><option>rounded</option></select></label><label>Font<select id="theme-profile-font" class="full-input"><option>system</option><option>inter</option><option>arial</option><option>georgia</option><option>mono</option></select></label><label>Custom accent<input id="theme-profile-custom-accent" class="full-input" type="color" value="#93a9ff"></label></div><label>Validated color variables (JSON)<textarea id="theme-profile-variables" class="full-textarea" rows="4" placeholder='{"--accent":"#93a9ff","--surface":"#20242c"}'></textarea></label><div class="button-line">${actionButton('Save theme profile','create-theme-profile','','primary-button')}</div></section><section class="section-block"><div class="section-heading"><div><strong>Saved profiles</strong><p>${profiles.length} profiles stored locally.</p></div></div><div class="feature-list">${rows || emptyState('No theme profiles','Create a profile to customize a workspace.')}</div></section>`;
+}
+
 function renderResearchLibrary() {
   const items = state.researchItems || [];
   const rows = items.map((item) => {
@@ -487,6 +496,11 @@ function renderContent() {
   document.documentElement.dataset.animations = String(state.settings?.animations !== false);
   if (state.settings?.customAccent) document.documentElement.style.setProperty('--custom-accent', state.settings.customAccent);
   else document.documentElement.style.removeProperty('--custom-accent');
+  for (const key of ['--accent','--custom-accent','--bg','--surface','--surface-2','--surface-3','--text','--muted','--border','--tab-active','--toolbar-bg','--panel-bg']) {
+    const value = state.settings?.customThemeVariables?.[key];
+    if (/^#[0-9a-f]{6}$/i.test(value || '')) document.documentElement.style.setProperty(key, value);
+    else if (key !== '--custom-accent') document.documentElement.style.removeProperty(key);
+  }
   const activeElement = document.activeElement;
   const isEditing = activeElement && content.contains(activeElement) && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement.tagName);
   if (isEditing && activeElement.id !== 'history-search') return;
@@ -495,6 +509,7 @@ function renderContent() {
     workspaces: renderWorkspaces,
     bookmarks: renderBookmarks,
     research: renderResearchLibrary,
+    themes: renderThemeStudio,
     history: renderHistory,
     downloads: renderDownloads,
     split: renderSplit,
@@ -524,6 +539,60 @@ async function handleClick(event) {
   if (button) {
     const action = button.dataset.action;
     const value = button.dataset.value;
+    if (action === 'create-theme-profile') {
+      let cssVariables = {};
+      try { cssVariables = JSON.parse(document.getElementById('theme-profile-variables')?.value || '{}'); }
+      catch { showToast('Custom variables must be valid JSON.', true); return; }
+      const result = await api.action(action, { name: document.getElementById('theme-profile-name')?.value || '', theme: document.getElementById('theme-profile-theme')?.value, themePreset: document.getElementById('theme-profile-preset')?.value, accent: document.getElementById('theme-profile-accent')?.value, density: document.getElementById('theme-profile-density')?.value, cornerStyle: document.getElementById('theme-profile-corners')?.value, fontFamily: document.getElementById('theme-profile-font')?.value, customAccent: document.getElementById('theme-profile-custom-accent')?.value, cssVariables });
+      showToast(result?.ok ? 'Theme profile saved.' : result?.error || 'Could not save theme profile.', !result?.ok); renderContent(); return;
+    }
+    if (action === 'assign-selected-theme') {
+      const id = document.getElementById('theme-profile-target')?.value;
+      const workspaceId = document.getElementById('theme-workspace-target')?.value;
+      const result = await api.action('assign-theme-profile', { id, workspaceId });
+      showToast(result?.ok ? 'Theme assigned to workspace.' : result?.error || 'Could not assign theme.', !result?.ok); renderContent(); return;
+    }
+    if (action === 'assign-theme-profile') {
+      const result = await api.action('assign-theme-profile', { id: value, workspaceId: state.activeWorkspaceId });
+      showToast(result?.ok ? 'Theme assigned to active workspace.' : result?.error || 'Could not assign theme.', !result?.ok); renderContent(); return;
+    }
+    if (action === 'preview-theme-profile') {
+      const result = await api.action(action, { id: value });
+      if (!result?.ok) showToast(result?.error || 'Could not preview theme.', true); else showToast('Preview active. Apply or cancel to finish.');
+      return;
+    }
+    if (action === 'apply-theme-preview') {
+      const profileId = (state.themeProfiles || []).find((item) => item.id === state.workspaceThemeProfiles?.[state.activeWorkspaceId])?.id || (state.themeProfiles || []).find((item) => item.name && item.id === state.themePreviewProfileId)?.id;
+      const previewProfile = (state.themeProfiles || []).find((item) => item.id === profileId);
+      if (!previewProfile) {
+        const candidate = (state.themeProfiles || []).find((item) => item.id !== state.workspaceThemeProfiles?.[state.activeWorkspaceId]);
+        if (!candidate) { showToast('No preview profile is available.', true); return; }
+        const result = await api.action('assign-theme-profile', { id: candidate.id, workspaceId: state.activeWorkspaceId });
+        showToast(result?.ok ? 'Theme applied.' : result?.error || 'Could not apply theme.', !result?.ok);
+      } else {
+        const result = await api.action('assign-theme-profile', { id: previewProfile.id, workspaceId: state.activeWorkspaceId });
+        showToast(result?.ok ? 'Theme applied.' : result?.error || 'Could not apply theme.', !result?.ok);
+      }
+      renderContent(); return;
+    }
+    if (action === 'cancel-theme-preview') { await api.action(action); showToast('Theme preview cancelled.'); return; }
+    if (action === 'reset-workspace-theme') {
+      const result = await api.action(action, { workspaceId: state.activeWorkspaceId });
+      showToast(result?.ok ? 'Workspace appearance reset.' : result?.error || 'Could not reset appearance.', !result?.ok); renderContent(); return;
+    }
+    if (action === 'delete-theme-profile') {
+      if (!window.confirm('Delete this theme profile and remove its workspace assignments?')) return;
+      const result = await api.action(action, { id: value });
+      showToast(result?.ok ? 'Theme profile deleted.' : result?.error || 'Could not delete theme.', !result?.ok); renderContent(); return;
+    }
+    if (action === 'export-theme-profile') {
+      const result = await api.action(action, { id: value });
+      showToast(result?.ok ? 'Theme exported.' : result?.cancelled ? 'Export cancelled.' : result?.error || 'Export failed.', !result?.ok && !result?.cancelled); return;
+    }
+    if (action === 'import-theme-profile') {
+      const result = await api.action(action);
+      showToast(result?.ok ? 'Theme imported.' : result?.cancelled ? 'Import cancelled.' : result?.error || 'Import failed.', !result?.ok && !result?.cancelled); renderContent(); return;
+    }
     if (action === 'capture-research-article') {
       const result = await api.action(action);
       if (result?.ok) {

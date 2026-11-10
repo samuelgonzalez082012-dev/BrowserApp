@@ -51,6 +51,11 @@ function applyPersonalization(settings = {}) {
   root.style.setProperty('--sidebar-width', `${Number(settings.sidebarWidth) || 356}px`);
   if (settings.customAccent) root.style.setProperty('--custom-accent', settings.customAccent);
   else root.style.removeProperty('--custom-accent');
+  for (const key of ['--accent','--custom-accent','--bg','--surface','--surface-2','--surface-3','--text','--muted','--border','--tab-active','--toolbar-bg','--panel-bg']) {
+    const value = settings.customThemeVariables?.[key];
+    if (/^#[0-9a-f]{6}$/i.test(value || '')) root.style.setProperty(key, value);
+    else if (key !== '--custom-accent') root.style.removeProperty(key);
+  }
 
   const visibility = settings.toolbarVisibility || {};
   const buttonMap = {
