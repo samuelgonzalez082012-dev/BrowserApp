@@ -18,6 +18,8 @@ is deliberately not wired into the production BrowserApp tab manager yet.
    resize/focus it with SetWindowPos and focus APIs.
 6. Provides a small address bar and back/forward/reload controls so the native
    embedding can be exercised without changing the regular browser UI.
+7. Attempts a graceful BiDi browser close, then terminates only the managed
+   Firefox process tree if Firefox does not exit in the grace period.
 
 ## Requirements
 
@@ -42,8 +44,10 @@ open. The top toolbar belongs to Electron. The area below it should be the
 actual Firefox window, not a screenshot or a Chromium approximation.
 
 Try a few public HTTPS websites, navigate between them, resize the host window,
-and check keyboard focus by typing into the website and the address bar. Close
-the POC window to end the managed Firefox process.
+and check keyboard focus by typing into the website and the address bar. Use
+https://dive.unhosting.site/ as the first compatibility target from the
+BrowserApp investigation notes. Close the POC window to end the managed Firefox
+process.
 
 The POC stores its isolated Firefox profile under Electron's userData folder
 at firefox-poc/profile. The precise userData directory can vary with the
@@ -91,10 +95,12 @@ Run the JavaScript unit tests:
 
     npm test
 
-The tests cover executable discovery, navigation URL validation, declared
-capability limits and the platform guard for native embedding. They do not
-prove that Firefox is installed, that the BiDi handshake succeeds, or that
-Windows will accept the cross-process SetParent operation.
+The GitHub Actions workflow runs the Node tests on Windows and Linux and parses
+the PowerShell host script on Windows. The tests cover executable discovery,
+navigation URL validation, declared capability limits, BiDi response parsing
+and the platform guard for native embedding. They do not prove that Firefox is
+installed, that a live BiDi handshake succeeds, or that Windows will accept the
+cross-process SetParent operation.
 
 The real acceptance checklist is:
 
@@ -116,3 +122,10 @@ places. The next integration stage must introduce explicit capability-aware
 service boundaries and either implement or disable unsupported Firefox
 features per engine. Do not simply register this prototype adapter in the
 production EngineManager and assume the rest of BrowserApp is engine-neutral.
+
+## Technical references
+
+- MDN: Create a WebDriver BiDi connection — https://developer.mozilla.org/en-US/docs/Web/WebDriver/How_to/Create_BiDi_connection
+- Microsoft: SetParent — https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setparent
+- Microsoft: SetWindowPos — https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos
+- Microsoft: High DPI desktop application development — https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows
