@@ -22,6 +22,7 @@ const { PasswordVault } = require('./password-vault');
 const { EngineManager } = require('./engine-adapters/engine-manager');
 const { ChromiumEngineAdapter } = require('./engine-adapters/chromium-engine');
 const { normalizeContainerDomain, resolveContainerForUrl: resolveContainerRoute } = require('./container-routing');
+const { DownloadQueue } = require('./download-queue');
 
 const WINDOW_WIDTH = 1360;
 const WINDOW_HEIGHT = 900;
@@ -244,6 +245,7 @@ const ephemeralContainerSessions = new WeakSet();
 
 const tabs = [];
 const activeDownloads = new Map();
+const downloadQueue = new DownloadQueue(3);
 const privateDownloads = [];
 const recentlyClosed = [];
 const miniWindows = new Set();
@@ -818,6 +820,7 @@ function toPublicDownload(item) {
   const live = activeDownloads.get(item.id);
   if (live) {
     const nativeItem = live.item;
+    const queued = downloadQueue.status(item.id) === 'queued';
     return {
       ...item,
       filename: nativeItem.getFilename() || item.filename,
@@ -825,8 +828,9 @@ function toPublicDownload(item) {
       totalBytes: nativeItem.getTotalBytes(),
       percent: Math.max(0, nativeItem.getPercentComplete()),
       paused: nativeItem.isPaused(),
+      queued,
       canResume: nativeItem.canResume(),
-      state: nativeItem.isPaused() ? 'paused' : nativeItem.getState()
+      state: queued ? 'queued' : (item.state === 'interrupted' ? 'interrupted' : nativeItem.isPaused() ? 'paused' : nativeItem.getState())
     };
   }
   return { ...item };
@@ -1676,12 +1680,14 @@ function addDownload(item, sourceWebContents) {
 
   const sourceTab = tabs.find((tab) => !tab.engineTab.isDestroyed() && tab.engineTab.id === sourceWebContents?.id);
   const isPrivateDownload = Boolean(sourceTab?.isPrivate || isTemporaryContainerTab(sourceTab));
+  const queued = downloadQueue.enqueue(id) === 'queued';
   const record = {
     id,
     filename,
     url: item.getURL(),
     filePath: '',
-    state: 'progressing',
+    state: queued ? 'queued' : 'progressing',
+    queued,
     percent: 0,
     receivedBytes: 0,
     totalBytes: item.getTotalBytes(),
@@ -1697,7 +1703,8 @@ function addDownload(item, sourceWebContents) {
   sendState();
 
   item.on('updated', (_event, state) => {
-    record.state = item.isPaused() ? 'paused' : state;
+    record.queued = downloadQueue.status(id) === 'queued';
+    record.state = record.queued ? 'queued' : item.isPaused() ? 'paused' : state;
     record.receivedBytes = item.getReceivedBytes();
     record.totalBytes = item.getTotalBytes();
     record.percent = Math.max(0, item.getPercentComplete());
@@ -1706,6 +1713,7 @@ function addDownload(item, sourceWebContents) {
 
   item.on('done', (_event, state) => {
     record.state = state;
+    record.queued = false;
     record.filename = item.getFilename() || record.filename;
     record.filePath = item.getSavePath() || record.filePath;
     record.receivedBytes = item.getReceivedBytes();
@@ -1713,10 +1721,14 @@ function addDownload(item, sourceWebContents) {
     record.percent = state === 'completed' ? 100 : record.percent;
     record.completedAt = Date.now();
     const canKeepForResume = state === 'interrupted' && item.canResume();
+    const promoted = canKeepForResume ? downloadQueue.pause(id) : downloadQueue.finish(id);
     if (!canKeepForResume) activeDownloads.delete(id);
+    startPromotedDownloads(promoted);
     if (!isPrivateDownload) saveData();
     sendState();
   });
+
+  if (queued) item.pause();
 }
 
 function configureDownloads(browserSession) {
@@ -2154,14 +2166,43 @@ function clearPrivateSessionData() {
   });
 }
 
+function startPromotedDownloads(ids = []) {
+  for (const id of ids) {
+    const active = activeDownloads.get(id);
+    const record = [...data.downloads, ...privateDownloads].find((item) => item.id === id);
+    if (!active || !record || active.item.isDestroyed?.()) {
+      downloadQueue.finish(id);
+      continue;
+    }
+    record.queued = false;
+    record.state = 'progressing';
+    try { active.item.resume(); }
+    catch (error) { record.state = 'interrupted'; console.warn('Could not resume queued download:', error.message); }
+  }
+}
+
 function pauseResumeCancelDownload(downloadId, action) {
-  const active = activeDownloads.get(String(downloadId));
+  const id = String(downloadId);
+  const active = activeDownloads.get(id);
   if (!active) return { ok: false, error: 'This download is no longer active.' };
   const item = active.item;
+  const record = [...data.downloads, ...privateDownloads].find((entry) => entry.id === id);
   try {
-    if (action === 'pause' && !item.isPaused()) item.pause();
-    else if (action === 'resume' && item.canResume()) item.resume();
-    else if (action === 'cancel') item.cancel();
+    if (action === 'pause' && !item.isPaused()) {
+      const promoted = downloadQueue.pause(id);
+      if (record) { record.queued = false; record.state = 'paused'; }
+      item.pause();
+      startPromotedDownloads(promoted);
+    } else if (action === 'resume' && item.canResume()) {
+      const started = downloadQueue.resume(id);
+      if (record) {
+        record.queued = !started;
+        record.state = started ? 'progressing' : 'queued';
+      }
+      if (started) item.resume();
+      sendState();
+      return { ok: true, queued: !started };
+    } else if (action === 'cancel') item.cancel();
     sendState();
     return { ok: true };
   } catch (error) {
