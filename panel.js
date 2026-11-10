@@ -19,7 +19,7 @@ const SECTION_NAMES = {
   performance: 'Performance manager', webpanels: 'Web panels', notifications: 'Notifications', tools: 'Research tools',
   profiles: 'Browser profiles', migration: 'Import and backup', sitecontrols: 'Site controls', apps: 'Installed web apps',
   accessibility: 'Accessibility and translation', developer: 'Developer tools', updates: 'Browser updates', adblock: 'Ad blocker',
-  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', research: 'Research library', themes: 'Personalization studio', security: 'Security dashboard', about: 'About Minimal Browser'
+  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', research: 'Research library', themes: 'Personalization studio', security: 'Security dashboard', plugins: 'Local plugins', about: 'About Minimal Browser'
 };
 
 function escapeHtml(value) {
@@ -245,7 +245,7 @@ function renderExtensions() {
     return `<article class="extension-card"><div class="extension-icon">⌘</div><div class="row-main"><strong>${escapeHtml(extension.name)}</strong><small>v${escapeHtml(extension.version)} · ${escapeHtml(extension.id)}</small><small>Permissions: ${escapeHtml((extension.permissions || []).join(', ') || 'Not declared')}</small><small>${extension.enabled ? 'Enabled' : 'Disabled'} · ${escapeHtml(extension.path)}</small>${warnings.map((warning) => `<small class="muted-note">⚠ ${escapeHtml(warning)}</small>`).join('')}</div><button class="small-button" data-action="extension-toggle" data-value="${escapeHtml(extension.id)}" data-enabled="${extension.enabled ? 'false' : 'true'}">${extension.enabled ? 'Disable' : 'Enable'}</button><button class="small-button" data-action="extension-reload" data-value="${escapeHtml(extension.id)}">Reload</button><button class="row-remove" data-action="remove-extension" data-value="${escapeHtml(extension.id)}" title="Remove extension">×</button></article>`;
   }).join('');
   const catalog = (state.extensionCatalog || []).map((item) => `<article class="catalog-card"><strong>${escapeHtml(item.name)} <span class="muted-note">${escapeHtml(item.version)}</span></strong><small class="muted-note">${escapeHtml(item.category)}</small><p>${escapeHtml(item.description)}</p>${actionButton('Open listing','open-extension-listing',item.id,'primary-button')}</article>`).join('');
-  return `<section class="section-block"><div class="section-heading"><div><strong>Installed extensions</strong><p>Manage compatible unpacked extensions for this profile. Paths are remembered between launches.</p></div></div><div class="button-line"><button class="primary-button" id="add-extension" type="button">Add unpacked extension</button></div><div class="extension-list">${rows || emptyState('No extensions installed','Choose a trusted unpacked extension folder to add one.')}</div></section>
+  return `<section class="section-block"><div class="button-line">${actionButton('Export extension collection','export-extension-collection')} ${actionButton('Import extension collection','import-extension-collection')}</div><div class="section-heading"><div><strong>Installed extensions</strong><p>Manage compatible unpacked extensions for this profile. Paths are remembered between launches.</p></div></div><div class="button-line"><button class="primary-button" id="add-extension" type="button">Add unpacked extension</button></div><div class="extension-list">${rows || emptyState('No extensions installed','Choose a trusted unpacked extension folder to add one.')}</div></section>
   <section class="section-block"><div class="section-heading"><div><strong>Extension library</strong><p>Connect a trusted HTTPS catalog that publishes metadata and listing links. This browser does not install CRX files or execute catalog downloads.</p></div></div><label class="field-label" for="extension-catalog-url">Catalog JSON URL</label><input class="full-input" id="extension-catalog-url" value="${escapeHtml(state.settings?.extensionCatalogUrl || '')}" placeholder="https://your-domain.example/extensions.json"><div class="button-line">${actionButton('Save catalog URL','save-extension-catalog','','primary-button')}${actionButton('Refresh catalog','refresh-extension-catalog')}</div><div class="feature-list">${catalog || emptyState('No catalog entries','Set a trusted catalog URL. The catalog format is documented in the README.')}</div></section>
   <section class="notice-card"><strong>Compatibility and security</strong><p>Electron supports only a subset of Chrome extension APIs. The browser loads unpacked folders only. Catalog entries are listing links, not verified packages. Always inspect extension source and permissions before loading it.</p></section>`;
 }
@@ -490,6 +490,12 @@ function renderSecurityDashboard() {
   return `<section class="section-block"><div class="section-heading"><div><strong>Privacy and security overview</strong><p>Local permission and extension audit. Risk labels are indicators based on declared permissions, not proof that an extension is malicious.</p></div></div><div class="stats-grid"><div class="stat-card"><strong>${audit.allowedPermissionCount || 0}</strong><small>Allowed site permissions</small></div><div class="stat-card"><strong>${audit.deniedPermissionCount || 0}</strong><small>Denied site permissions</small></div><div class="stat-card"><strong>${audit.highRiskExtensionCount || 0}</strong><small>High-risk extensions</small></div><div class="stat-card"><strong>${audit.extensionCount || 0}</strong><small>Installed extensions</small></div></div></section><section class="section-block"><div class="section-heading"><div><strong>Secure DNS</strong><p>Uses Chromium DNS-over-HTTPS with a fixed trusted provider. A browser restart is required. This does not protect traffic from all network monitoring or replace a VPN.</p></div></div><select id="secure-dns-provider" class="full-input"><option value="system" ${state.secureDnsProvider==='system'?'selected':''}>Use system DNS</option><option value="cloudflare" ${state.secureDnsProvider==='cloudflare'?'selected':''}>Cloudflare DNS over HTTPS</option><option value="google" ${state.secureDnsProvider==='google'?'selected':''}>Google DNS over HTTPS</option><option value="quad9" ${state.secureDnsProvider==='quad9'?'selected':''}>Quad9 DNS over HTTPS</option></select><div class="button-line">${actionButton('Save DNS provider','save-secure-dns','','primary-button')}</div></section><section class="section-block"><div class="section-heading"><div><strong>Extension permission audit</strong><p>Review broad host access, cookies, history, network interception and other powerful permissions.</p></div></div>${extensions || emptyState('No extensions found','Installed extension manifests will appear here.')}</section><section class="section-block"><div class="section-heading"><div><strong>Security event log</strong><p>Local audit entries for permission changes and download scans.</p></div></div>${events || emptyState('No security events','Security-relevant actions will be recorded here.')}</section>`;
 }
 
+function renderPlugins() {
+  const plugins = state.installedPlugins || [];
+  const rows = plugins.map((plugin) => `<article class="feature-card"><div class="section-heading"><div><strong>${escapeHtml(plugin.name)}</strong><p>${escapeHtml(plugin.id)} · v${escapeHtml(plugin.version)}</p></div><span class="row-tag">${plugin.compatible ? (plugin.enabled ? 'Enabled' : 'Disabled') : 'Incompatible'}</span></div><p class="muted-note">${escapeHtml(plugin.description || plugin.compatibilityReason || '')}</p><small>Permissions: ${escapeHtml((plugin.permissions || []).join(', ') || 'None')}</small><div class="button-line">${actionButton('Open','open-local-plugin',plugin.id,'primary-button',!plugin.enabled || !plugin.compatible)} ${actionButton(plugin.enabled ? 'Disable' : 'Enable','toggle-local-plugin',plugin.id)} ${actionButton('Remove','remove-local-plugin',plugin.id,'danger-button')}</div></article>`).join('');
+  return `<section class="section-block"><div class="section-heading"><div><strong>Local plugin ecosystem</strong><p>Install local plugins that run in isolated sandboxed windows. Plugins receive only the capability APIs explicitly listed in their manifest; they never receive raw IPC or Node.js access.</p></div></div><div class="button-line">${actionButton('Install local plugin','install-local-plugin','','primary-button')}</div><p class="muted-note">Only install plugins from sources you trust. Plugin code can still access the network from its own web context; review its source and permissions first.</p><div class="feature-list">${rows || emptyState('No local plugins installed','Choose a folder containing a valid plugin.json and entry HTML file.')}</div></section>`;
+}
+
 function renderResearchLibrary() {
   const items = state.researchItems || [];
   const rows = items.map((item) => {
@@ -525,6 +531,7 @@ function renderContent() {
     research: renderResearchLibrary,
     themes: renderThemeStudio,
     security: renderSecurityDashboard,
+    plugins: renderPlugins,
     history: renderHistory,
     downloads: renderDownloads,
     split: renderSplit,
@@ -634,6 +641,34 @@ async function handleClick(event) {
       const result = await api.action(action, { id: value });
       showToast(result?.ok ? 'Download scan completed.' : result?.error || 'Download scan failed.', !result?.ok);
       return;
+    }
+    if (action === 'export-extension-collection' || action === 'import-extension-collection') {
+      const result = await api.action(action);
+      if (result?.ok) showToast(action.startsWith('export') ? 'Extension collection exported.' : 'Extension collection imported: ' + result.count + ' loaded.');
+      else showToast(result?.cancelled ? 'Operation cancelled.' : result?.error || 'Extension collection operation failed.', !result?.cancelled);
+      renderContent(); return;
+    }
+    if (action === 'install-local-plugin') {
+      const result = await api.action(action);
+      showToast(result?.ok ? 'Plugin installed.' : result?.cancelled ? 'Installation cancelled.' : result?.error || 'Plugin install failed.', !result?.ok && !result?.cancelled);
+      renderContent(); return;
+    }
+    if (action === 'open-local-plugin') {
+      const result = await api.action(action, { id: value });
+      if (!result?.ok) showToast(result?.error || 'Could not open plugin.', true);
+      return;
+    }
+    if (action === 'toggle-local-plugin') {
+      const plugin = (state.installedPlugins || []).find((item) => item.id === value);
+      const result = await api.action(action, { id: value, enabled: !plugin?.enabled });
+      showToast(result?.ok ? 'Plugin state updated.' : result?.error || 'Could not update plugin.', !result?.ok);
+      renderContent(); return;
+    }
+    if (action === 'remove-local-plugin') {
+      if (!window.confirm('Remove this plugin and delete its local installed files?')) return;
+      const result = await api.action(action, { id: value });
+      showToast(result?.ok ? 'Plugin removed.' : result?.error || 'Could not remove plugin.', !result?.ok);
+      renderContent(); return;
     }
     if (action === 'capture-research-article') {
       const result = await api.action(action);

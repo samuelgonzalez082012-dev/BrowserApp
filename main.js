@@ -28,6 +28,7 @@ const themeStudio = require('./theme-studio');
 const developerTools = require('./developer-tools');
 const privacyAudit = require('./privacy-audit');
 const { execFile } = require('node:child_process');
+const pluginManager = require('./plugin-manager');
 
 const earlyProfileRegistry = (() => { try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'browser-profiles.json'), 'utf8')); } catch { return { activeProfileId: 'personal' }; } })();
 const earlyProfileId = /^[a-z0-9_-]{2,64}$/i.test(earlyProfileRegistry.activeProfileId || '') ? earlyProfileRegistry.activeProfileId : 'personal';
@@ -193,6 +194,7 @@ function defaultData() {
     collections: [],
     researchItems: [],
     securityEvents: [],
+    installedPlugins: [],
     themeProfiles: [],
     workspaceThemeProfiles: {},
     sessions: [],
@@ -239,6 +241,7 @@ let activeProfileId = 'personal';
 let activeProfileIsGuest = false;
 let guestProfileDirectory = null;
 const installedAppWindows = new Map();
+const pluginWindows = new Map();
 let lastUpdateCheck = null;
 let lastImportDiagnostics = null;
 let automaticBackupTimer = null;
@@ -654,6 +657,7 @@ function readPersistence() {
     collections: Array.isArray(savedData.collections) ? savedData.collections.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.items)).slice(0, 300) : [],
     researchItems: researchLibrary.sanitizeStoredItems(savedData.researchItems),
     securityEvents: privacyAudit.sanitizeSecurityEvents(savedData.securityEvents),
+    installedPlugins: pluginManager.sanitizePluginRegistry(savedData.installedPlugins),
     themeProfiles: themeStudio.sanitizeThemeProfiles(savedData.themeProfiles),
     workspaceThemeProfiles: savedData.workspaceThemeProfiles && typeof savedData.workspaceThemeProfiles === 'object' && !Array.isArray(savedData.workspaceThemeProfiles) ? Object.fromEntries(Object.entries(savedData.workspaceThemeProfiles).filter(([workspaceId, themeId]) => safeWorkspacesWithFallback.some((workspace) => workspace.id === workspaceId) && typeof themeId === 'string')) : {},
     sessions: Array.isArray(savedData.sessions) ? savedData.sessions.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.tabs)).slice(0, 100) : [],
@@ -941,6 +945,7 @@ function getPublicState() {
     downloads: (active?.isPrivate || isTemporaryContainerTab(active) ? privateDownloads : data.downloads).slice(0, MAX_DOWNLOADS).map(toPublicDownload),
     extensions: getExtensionList(),
     installedApps: data.installedApps || [],
+    installedPlugins: (data.installedPlugins || []).map((plugin) => ({ id: plugin.id, name: plugin.name, version: plugin.version, description: plugin.description, permissions: plugin.permissions, enabled: plugin.enabled, compatible: pluginManager.pluginCompatibility(plugin, app.getVersion()).compatible, compatibilityReason: pluginManager.pluginCompatibility(plugin, app.getVersion()).reason })),
     adblock: { ...adBlockerStatus, stats: { ...data.adblockStats, private: { ...privateAdblockStats } }, whitelist: [...data.adblockWhitelist] },
     siteSettings: activeOrigin ? { ...(data.siteSettings[activeOrigin] || {}) } : {},
     siteOrigins: Object.keys({ ...data.permissions, ...data.siteSettings }).slice(0, 500),
@@ -3870,6 +3875,124 @@ async function importThemeProfile() {
   } catch (error) { return { ok: false, error: 'Invalid theme profile: ' + error.message }; }
 }
 
+async function installBrowserPlugin() {
+  const picked = await dialog.showOpenDialog(mainWindow, { title: 'Choose a local BrowserApp plugin folder', properties: ['openDirectory'] });
+  if (picked.canceled || !picked.filePaths?.[0]) return { ok: false, cancelled: true };
+  const source = path.resolve(picked.filePaths[0]);
+  let manifest;
+  try { manifest = pluginManager.validatePluginManifest(JSON.parse(fs.readFileSync(path.join(source, 'plugin.json'), 'utf8')), source); }
+  catch (error) { return { ok: false, error: 'Plugin manifest rejected: ' + error.message }; }
+  const compatibility = pluginManager.pluginCompatibility(manifest, app.getVersion());
+  if (!compatibility.compatible) return { ok: false, error: compatibility.reason };
+  const pluginsRoot = path.resolve(app.getPath('userData'), 'plugins');
+  const destination = path.join(pluginsRoot, manifest.id);
+  try {
+    fs.mkdirSync(pluginsRoot, { recursive: true });
+    if (path.dirname(destination) !== pluginsRoot) throw new Error('Invalid plugin destination.');
+    closeBrowserPlugin(manifest.id);
+    fs.rmSync(destination, { recursive: true, force: true });
+    fs.cpSync(source, destination, { recursive: true, dereference: false, filter: (entry) => {
+      try { const stat = fs.lstatSync(entry); return !stat.isSymbolicLink() && !entry.split(path.sep).includes('node_modules') && !entry.split(path.sep).includes('.git'); }
+      catch { return false; }
+    } });
+    const entryPath = path.resolve(destination, manifest.entry);
+    if (!entryPath.startsWith(destination + path.sep) || !fs.existsSync(entryPath) || !fs.statSync(entryPath).isFile()) throw new Error('Plugin entry file is missing or outside the plugin folder.');
+    data.installedPlugins = (data.installedPlugins || []).filter((item) => item.id !== manifest.id);
+    data.installedPlugins.push({ ...manifest, path: destination, enabled: true });
+    saveData(); sendState();
+    recordSecurityEvent('plugin-install', 'Local plugin installed', manifest.name + ' (' + manifest.id + ')');
+    return { ok: true, plugin: { id: manifest.id, name: manifest.name, version: manifest.version } };
+  } catch (error) { return { ok: false, error: 'Plugin installation failed: ' + error.message }; }
+}
+
+function closeBrowserPlugin(pluginId) {
+  const win = pluginWindows.get(String(pluginId));
+  if (win && !win.isDestroyed()) win.close();
+  pluginWindows.delete(String(pluginId));
+  return { ok: true };
+}
+
+function openBrowserPlugin(pluginId) {
+  const plugin = (data.installedPlugins || []).find((item) => item.id === String(pluginId));
+  if (!plugin || !plugin.enabled) return { ok: false, error: 'Plugin is not installed or enabled.' };
+  const compatibility = pluginManager.pluginCompatibility(plugin, app.getVersion());
+  if (!compatibility.compatible) return { ok: false, error: compatibility.reason };
+  const entryPath = path.resolve(plugin.path, plugin.entry);
+  if (!entryPath.startsWith(path.resolve(plugin.path) + path.sep) || !fs.existsSync(entryPath)) return { ok: false, error: 'Plugin entry file is missing.' };
+  const existing = pluginWindows.get(plugin.id);
+  if (existing && !existing.isDestroyed()) { existing.focus(); return { ok: true, existing: true }; }
+  const win = new BrowserWindow({
+    width: 960, height: 720, minWidth: 520, minHeight: 400, title: plugin.name,
+    webPreferences: {
+      preload: path.join(__dirname, 'plugin-preload.js'),
+      additionalArguments: ['--browser-plugin-id=' + plugin.id],
+      partition: 'browser-plugin-' + plugin.id,
+      nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true
+    }
+  });
+  pluginWindows.set(plugin.id, win);
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, url) => { if (!isInternalFileUrl(url, entryPath)) event.preventDefault(); });
+  win.on('closed', () => { if (pluginWindows.get(plugin.id) === win) pluginWindows.delete(plugin.id); });
+  win.loadFile(entryPath).catch((error) => console.warn('Plugin failed to load:', error.message));
+  return { ok: true };
+}
+
+async function invokePluginCapability(event, pluginId, capability, payload = {}) {
+  const plugin = (data.installedPlugins || []).find((item) => item.id === String(pluginId));
+  const win = pluginWindows.get(String(pluginId));
+  if (!plugin || !win || win.isDestroyed() || win.webContents !== event.sender) return { ok: false, error: 'Untrusted plugin context.' };
+  if (!pluginManager.hasPermission(plugin, capability)) return { ok: false, error: 'Plugin has not been granted the ' + capability + ' permission.' };
+  switch (capability) {
+    case 'activeTab.read': {
+      const tab = getActiveTab();
+      if (!tab || tab.isPrivate || isTemporaryContainerTab(tab) || tab.engineTab.isDestroyed()) return { ok: false, error: 'No shareable active tab is available.' };
+      return { ok: true, tab: { title: String(tab.title || '').slice(0, 200), url: tab.engineTab.getURL() } };
+    }
+    case 'tabs.open': {
+      const url = normalizeAddress(payload.url || '');
+      if (!url || !isSafeWebUrl(url)) return { ok: false, error: 'Only valid HTTP or HTTPS URLs can be opened.' };
+      createTab(url, { activate: true }); return { ok: true };
+    }
+    case 'notes.create':
+      return createNote({ title: String(payload.title || 'Plugin note').slice(0, 100), content: String(payload.content || '').slice(0, 10000), url: '' });
+    case 'notifications.show':
+      addBrowserNotification(String(payload.title || plugin.name).slice(0, 100), String(payload.body || '').slice(0, 500)); return { ok: true };
+    case 'external.open': {
+      let url = '';
+      try { const parsed = new URL(String(payload.url || '')); if (['http:','https:'].includes(parsed.protocol)) url = parsed.href; } catch {}
+      if (!url) return { ok: false, error: 'Only HTTP or HTTPS links can be opened externally.' };
+      await shell.openExternal(url); return { ok: true };
+    }
+    default: return { ok: false, error: 'Unsupported plugin capability.' };
+  }
+}
+
+async function exportExtensionCollection() {
+  const result = await dialog.showSaveDialog(mainWindow, { title: 'Export extension collection', defaultPath: 'browser-extension-collection.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
+  if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
+  const extensions = getExtensionList().map((item) => ({ id: item.id, name: item.name, version: item.version, path: item.path, enabled: item.enabled, permissions: item.permissions }));
+  fs.writeFileSync(result.filePath, JSON.stringify({ schemaVersion: 1, exportedAt: Date.now(), extensions }, null, 2), 'utf8');
+  return { ok: true, path: result.filePath, count: extensions.length };
+}
+async function importExtensionCollection() {
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Import extension collection', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+  try {
+    const body = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8'));
+    if (body.schemaVersion !== 1 || !Array.isArray(body.extensions) || body.extensions.length > 100) throw new Error('Unsupported collection format or too many entries.');
+    const results = [];
+    for (const item of body.extensions) {
+      if (!item || typeof item.path !== 'string' || !path.isAbsolute(item.path) || !fs.existsSync(path.join(item.path, 'manifest.json'))) {
+        results.push({ path: String(item?.path || ''), ok: false, error: 'Extension folder is missing.' });
+        continue;
+      }
+      results.push({ path: item.path, ...(await loadExtensionPath(item.path)) });
+    }
+    return { ok: true, results, count: results.filter((item) => item.ok).length };
+  } catch (error) { return { ok: false, error: error.message }; }
+}
+
 async function runPanelAction(action, payload = {}) {
   const adblockActions = new Set(['toggle-adblock', 'adblock-lists', 'adblock-update', 'adblock-whitelist-toggle', 'adblock-add-host', 'adblock-remove-host', 'adblock-add-list', 'adblock-remove-list', 'set-adblock-auto-update']);
   if (safeMode && adblockActions.has(action)) return { ok: false, error: 'Ad blocking controls are temporarily disabled in Safe Mode. Restart normally to restore filtering.' };
@@ -3977,6 +4100,30 @@ async function runPanelAction(action, payload = {}) {
       sendState(); return { ok: true, provider, restartRequired: true };
     }
     case 'scan-download': return scanDownloadedFile(payload.id);
+    case 'install-local-plugin': return installBrowserPlugin();
+    case 'open-local-plugin': return openBrowserPlugin(payload.id);
+    case 'close-local-plugin': return closeBrowserPlugin(payload.id);
+    case 'toggle-local-plugin': {
+      const plugin = (data.installedPlugins || []).find((item) => item.id === String(payload.id));
+      if (!plugin) return { ok: false, error: 'Plugin not found.' };
+      plugin.enabled = Boolean(payload.enabled);
+      if (!plugin.enabled) closeBrowserPlugin(plugin.id);
+      saveData(); sendState(); return { ok: true };
+    }
+    case 'remove-local-plugin': {
+      const id = String(payload.id);
+      const plugin = (data.installedPlugins || []).find((item) => item.id === id);
+      if (!plugin) return { ok: false, error: 'Plugin not found.' };
+      closeBrowserPlugin(id);
+      data.installedPlugins = data.installedPlugins.filter((item) => item.id !== id);
+      const root = path.resolve(app.getPath('userData'), 'plugins');
+      const target = path.resolve(plugin.path);
+      if (path.dirname(target) === root) fs.rmSync(target, { recursive: true, force: true });
+      saveData(); sendState(); recordSecurityEvent('plugin-remove', 'Local plugin removed', plugin.name);
+      return { ok: true };
+    }
+    case 'export-extension-collection': return exportExtensionCollection();
+    case 'import-extension-collection': return importExtensionCollection();
     case 'capture-research-article': return captureResearchArticle();
     case 'open-research-item': return openResearchItem(payload.id);
     case 'delete-research-item':
@@ -4250,6 +4397,7 @@ function registerIpc() {
     syncChildViews(); sendState();
   });
 
+  ipcMain.handle('plugin:invoke', (event, pluginId, capability, payload) => invokePluginCapability(event, pluginId, capability, payload));
   ipcMain.handle('panel:get-state', (event) => isTrustedPanelSender(event) ? getPublicState() : null);
   ipcMain.handle('panel:close', (event) => { if (isTrustedPanelSender(event)) setPanelVisible(false); });
   ipcMain.handle('panel:set-section', (event, section) => {
