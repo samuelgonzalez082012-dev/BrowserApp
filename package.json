@@ -1,17 +1,70 @@
 {
-  "name": "placid-holiday-provide-d6gad",
-  "productName": "placid-holiday-provide-d6gad",
-  "description": "My Electron application description",
-  "keywords": [],
+  "name": "minimal-browser",
+  "productName": "Minimal Browser",
+  "description": "A local-first Chromium browser with workspaces, privacy tools and a local plugin system.",
+  "version": "3.0.0",
+  "author": "BrowserApp",
+  "license": "UNLICENSED",
   "main": "./main.js",
-  "version": "1.0.0",
-  "author": "samue",
   "scripts": {
     "start": "electron .",
-    "test": "node --test"
+    "test": "node --test",
+    "check:syntax": "find . -type f -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check",
+    "build:win": "electron-builder --win nsis",
+    "release:win": "electron-builder --win nsis --publish always"
   },
-  "dependencies": {},
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
   "devDependencies": {
-    "electron": "43.4.0"
+    "electron": "43.4.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.browserapp.minimalbrowser",
+    "productName": "Minimal Browser",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "."
+    },
+    "files": [
+      "**/*",
+      "!test/**",
+      "!docs/**",
+      "!.github/**",
+      "!V*-CHANGELOG.txt",
+      "!README.txt",
+      "!package-lock.json"
+    ],
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Minimal-Browser-Setup-${version}-${arch}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "samuelgonzalez082012-dev",
+        "repo": "BrowserApp",
+        "releaseType": "release"
+      }
+    ]
   }
 }

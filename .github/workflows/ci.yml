@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,9 +18,18 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Resolve and commit dependency lockfile
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "build: refresh npm dependency lockfile"
+            git push
+          fi
       - run: npm ci
       - name: Check JavaScript syntax
-        run: |
-          find . -type f -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check
+        run: npm run check:syntax
       - name: Run unit tests
         run: npm test
