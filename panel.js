@@ -10,7 +10,9 @@ let historyQuery = '';
 let toastTimer = null;
 let performanceSnapshot = null;
 let siteCookieCache = [];
-let updateStatusMessage = ''; 
+let updateStatusMessage = '';
+let workflowDraftSteps = [];
+let editingWorkflowId = ''; 
 
 const SECTION_NAMES = {
   workspaces: 'Workspaces', containers: 'Tab containers', bookmarks: 'Bookmarks', history: 'History', downloads: 'Downloads',
@@ -459,16 +461,18 @@ function renderServices() {
 }
 
 function renderAutomations() {
-  const steps = [
-    ['new-tab','Open a new tab'], ['new-private-tab','Open a private tab'], ['open-url','Open a URL'],
-    ['sleep-inactive','Sleep inactive tabs'], ['save-session','Save current session'], ['capture-page','Capture current page'],
-    ['reader-view','Open reader view'], ['export-pdf','Export page as PDF'], ['translate-page','Translate current page'],
-    ['bookmark-active','Bookmark current page'], ['open-services','Open Services panel'], ['open-passwords','Open Password Manager'], ['open-settings','Open settings']
-  ];
-  const options = steps.map(([value,label]) => `<label><input type="checkbox" value="${value}" data-workflow-step> ${label}</label>`).join('');
-  const cards = (state.automations || []).map((workflow) => `<article class="feature-card"><div class="feature-card-head"><strong>${escapeHtml(workflow.name)}</strong><small>${workflow.steps.length} steps</small></div><div class="mini-list">${workflow.steps.map((step,index) => `<span class="mini-row">${index+1}. ${escapeHtml(steps.find(([key])=>key===step.type)?.[1] || step.type)}${step.value ? ` · ${escapeHtml(step.value)}` : ''}</span>`).join('')}</div><div class="button-line">${actionButton('Run workflow','run-workflow',workflow.id,'primary-button')}${actionButton('Delete','delete-workflow',workflow.id,'danger-button')}</div></article>`).join('');
-  return `<section class="section-block"><div class="section-heading"><div><strong>Build a browser workflow</strong><p>Create a safe sequence of built-in browser actions. Workflows cannot execute arbitrary code or silently submit website forms.</p></div></div><label class="field-label" for="workflow-name">Workflow name</label><input class="full-input" id="workflow-name" maxlength="70" placeholder="Morning research setup"><strong class="field-label">Steps</strong><div class="workflow-step-list">${options}</div><label class="field-label" for="workflow-urls">URLs to open (optional, one per line)</label><textarea class="full-textarea" id="workflow-urls" rows="3" placeholder="https://example.com/&#10;https://developer.mozilla.org/"></textarea><div class="button-line">${actionButton('Save workflow','create-browser-workflow','','primary-button')}</div></section><section class="section-block"><div class="section-heading"><div><strong>Saved workflows</strong><p>Run a sequence when you need it. Each action uses the browser's existing permission and confirmation rules.</p></div></div><div class="feature-list">${cards || emptyState('No workflows saved','Create a workflow above to automate repeated browser setup tasks.')}</div></section>`;
+  const labels = {
+    'new-tab':'Open new tab','new-private-tab':'Open private tab','open-url':'Open URL','sleep-inactive':'Sleep inactive tabs',
+    'save-session':'Save current session','capture-page':'Capture current page','reader-view':'Open reader view','export-pdf':'Export page as PDF',
+    'translate-page':'Translate current page','bookmark-active':'Bookmark current page','open-services':'Open Services panel','open-passwords':'Open Password Manager','open-settings':'Open settings'
+  };
+  const editing = (state.automations || []).find((item) => item.id === editingWorkflowId);
+  const steps = workflowDraftSteps.map((step,index) => `<div class="list-row"><span class="row-main"><strong>${index+1}. ${escapeHtml(labels[step.type] || step.type)}</strong><small>${escapeHtml(step.value || '')}</small></span>${actionButton('↑','workflow-move-step',String(index),'',index===0)} ${actionButton('↓','workflow-move-step',String(index),'',index===workflowDraftSteps.length-1)} ${actionButton('Remove','workflow-remove-step',String(index),'danger-button')}</div>`).join('');
+  const cards = (state.automations || []).map((workflow) => `<article class="feature-card"><div class="feature-card-head"><strong>${escapeHtml(workflow.name)}</strong><small>v${workflow.version || 1} · ${workflow.steps.length} steps · ${(workflow.versions || []).length} previous versions</small></div><div class="mini-list">${workflow.steps.map((step,index) => `<span class="mini-row">${index+1}. ${escapeHtml(labels[step.type] || step.type)}${step.value ? ' · '+escapeHtml(step.value) : ''}</span>`).join('')}</div><div class="button-line">${actionButton('Run workflow','run-workflow',workflow.id,'primary-button')} ${actionButton('Edit','edit-workflow',workflow.id)} ${actionButton('Delete','delete-workflow',workflow.id,'danger-button')}</div></article>`).join('');
+  const options = Object.entries(labels).map(([value,label]) => `<option value="${value}">${label}</option>`).join('');
+  return `<section class="section-block"><div class="section-heading"><div><strong>Visual workflow editor</strong><p>Build an ordered sequence of approved browser actions. Move steps up or down, edit saved workflows, and keep version history.</p></div></div><label class="field-label" for="workflow-name">Workflow name</label><input class="full-input" id="workflow-name" maxlength="70" value="${escapeHtml(editing?.name || '')}" placeholder="Morning research setup"><div class="inline-form"><select id="workflow-step-type">${options}</select><input class="full-input" id="workflow-step-url" placeholder="https://example.com (for Open URL)"><button class="primary-button" data-action="workflow-add-step" type="button">Add step</button></div><div class="row-list">${steps || emptyState('No steps yet','Choose an action above and add it to the workflow.')}</div><div class="button-line">${actionButton(editingWorkflowId ? 'Save new version' : 'Create workflow',editingWorkflowId ? 'update-browser-workflow' : 'create-browser-workflow','','primary-button')}${editingWorkflowId ? actionButton('Cancel editing','cancel-workflow-edit') : ''}</div><p class="muted-note">Workflows that open URLs, capture pages, export PDFs or translate pages ask for confirmation before running. Website forms are never submitted by workflows.</p></section><section class="section-block"><div class="section-heading"><div><strong>Saved workflows</strong><p>Edits create a new version while keeping up to ten previous definitions.</p></div></div><div class="feature-list">${cards || emptyState('No workflows saved','Create a workflow above to automate repeated browser tasks.')}</div></section>`;
 }
+
 
 function renderAbout() {
   return `<section class="section-block"><div class="about-hero"><strong>Minimal Browser 2.2</strong><p>A local-first Chromium productivity browser. Profiles, workspaces, tab containers, password vault, bookmarks, notes, sessions and preferences stay on this device unless you explicitly open a connected website or configure an AI provider.</p></div></section><section class="section-block"><div class="section-heading"><div><strong>V2.2 — Advanced Tab Ecosystem</strong><p>Separate browsing contexts with persistent or temporary container sessions, custom identities, per-domain routing and easy tab movement.</p></div></div><div class="feature-list"><article class="feature-card"><strong>Isolated site sessions</strong><p>Persistent containers use separate Chromium partitions for cookies, local storage, IndexedDB, cache and website logins.</p></article><article class="feature-card"><strong>Temporary containers</strong><p>Temporary container site data is not persisted. Its URLs are excluded from persistent history, tab restore, diagnostics, and download history.</p></article><article class="feature-card"><strong>Automatic assignment</strong><p>Domain rules route typed URLs and user-initiated top-level navigation into the most specific matching container.</p></article><article class="feature-card"><strong>Tab controls</strong><p>Open tabs in a container, move tabs from the tab context menu, and manage containers from Browser Hub.</p></article></div></section><section class="section-block"><div class="section-heading"><div><strong>Local-first promise</strong><p>Cloud synchronization has deliberately been left out. There is no browser account or cross-device sync system in this build.</p></div></div><div class="vault-warning">Important: moving a tab reloads it and may lose unsaved page state. Some site permissions and password vault credentials remain profile-wide, not container-specific. AI requests send page text to your configured provider only when you submit a request.</div></section><section class="section-block"><strong>Technical details</strong><p class="muted-note">Product version label: 2.2.0 · Electron / Chromium engine · Local profile storage · No package manifest included for Electron Fiddle.</p>${actionButton('Open browser updates','open-updates')}</section>`;
@@ -669,6 +673,52 @@ async function handleClick(event) {
       const result = await api.action(action, { id: value });
       showToast(result?.ok ? 'Plugin removed.' : result?.error || 'Could not remove plugin.', !result?.ok);
       renderContent(); return;
+    }
+    if (action === 'workflow-add-step') {
+      const type = document.getElementById('workflow-step-type')?.value;
+      let value = '';
+      if (type === 'open-url') {
+        value = document.getElementById('workflow-step-url')?.value.trim() || '';
+        try { const parsed = new URL(value); if (!['http:','https:'].includes(parsed.protocol)) throw new Error(); }
+        catch { showToast('Enter a valid HTTP or HTTPS URL for this step.', true); return; }
+      }
+      if (workflowDraftSteps.length >= 20) { showToast('A workflow can contain at most 20 steps.', true); return; }
+      workflowDraftSteps.push({ type, value }); renderContent(); return;
+    }
+    if (action === 'workflow-move-step' || action === 'workflow-remove-step') {
+      const index = Number(value);
+      if (!Number.isInteger(index) || index < 0 || index >= workflowDraftSteps.length) return;
+      if (action === 'workflow-remove-step') workflowDraftSteps.splice(index, 1);
+      else {
+        const direction = button.dataset.direction === 'up' ? -1 : 1;
+        const target = index + direction;
+        if (target >= 0 && target < workflowDraftSteps.length) [workflowDraftSteps[index], workflowDraftSteps[target]] = [workflowDraftSteps[target], workflowDraftSteps[index]];
+      }
+      renderContent(); return;
+    }
+    if (action === 'edit-workflow') {
+      const workflow = (state.automations || []).find((item) => item.id === value);
+      if (!workflow) return;
+      editingWorkflowId = workflow.id; workflowDraftSteps = workflow.steps.map((step) => ({ ...step })); renderContent(); return;
+    }
+    if (action === 'cancel-workflow-edit') { editingWorkflowId = ''; workflowDraftSteps = []; renderContent(); return; }
+    if (action === 'create-browser-workflow' || action === 'update-browser-workflow') {
+      const payload = { name: document.getElementById('workflow-name')?.value || '', steps: workflowDraftSteps };
+      if (action === 'update-browser-workflow') payload.id = editingWorkflowId;
+      const result = await api.action(action, payload);
+      showToast(result?.ok ? (action === 'update-browser-workflow' ? 'Workflow version saved.' : 'Workflow created.') : result?.error || 'Could not save workflow.', !result?.ok);
+      if (result?.ok) { editingWorkflowId = ''; workflowDraftSteps = []; }
+      renderContent(); return;
+    }
+    if (action === 'run-workflow') {
+      let result = await api.action(action, { id: value });
+      if (result?.requiresConfirmation) {
+        const summary = (result.summary || []).map((item) => '• ' + item).join('\n');
+        if (!window.confirm('This workflow will perform the following actions:\n' + summary + '\n\nContinue?')) return;
+        result = await api.action(action, { id: value, confirmed: true });
+      }
+      showToast(result?.ok ? 'Workflow completed: ' + result.completed + ' steps.' : result?.error || 'Workflow failed.', !result?.ok);
+      return;
     }
     if (action === 'capture-research-article') {
       const result = await api.action(action);
@@ -885,7 +935,7 @@ async function handleClick(event) {
     } else if (action === 'restore-session') { if (window.confirm('Restore this session? It replaces the tabs in its saved workspace.')) await runAction(action, value);
     } else if (action === 'remove-bookmark' || action === 'remove-history') {
       await runAction(action, value);
-    } else if (action === 'download-pause' || action === 'download-resume' || action === 'download-cancel' || action === 'download-open' || action === 'download-show' || action === 'split-tab' || action === 'switch-workspace' || action === 'open-tab' || action === 'open-bookmark' || action === 'remove-extension' || action === 'delete-tab-group' || action === 'delete-note' || action === 'delete-collection' || action === 'restore-session' || action === 'delete-session' || action === 'sleep-tab' || action === 'wake-all-tabs' || action === 'open-web-panel' || action === 'close-web-panel' || action === 'delete-web-panel' || action === 'delete-custom-command' || action === 'mark-notifications-read' || action === 'clear-notifications' || action === 'run-workflow' || action === 'delete-workflow' || action === 'open-service' || action === 'open-extension-listing' || action === 'open-updates' || action === 'reader-view' || action === 'capture-page' || action === 'export-pdf' || action === 'translate-page' || action === 'mini-window' || action === 'export-backup' || action === 'import-backup' || action === 'choose-wallpaper') {
+    } else if (action === 'download-pause' || action === 'download-resume' || action === 'download-cancel' || action === 'download-open' || action === 'download-show' || action === 'split-tab' || action === 'switch-workspace' || action === 'open-tab' || action === 'open-bookmark' || action === 'remove-extension' || action === 'delete-tab-group' || action === 'delete-note' || action === 'delete-collection' || action === 'restore-session' || action === 'delete-session' || action === 'sleep-tab' || action === 'wake-all-tabs' || action === 'open-web-panel' || action === 'close-web-panel' || action === 'delete-web-panel' || action === 'delete-custom-command' || action === 'mark-notifications-read' || action === 'clear-notifications' || action === 'delete-workflow' || action === 'open-service' || action === 'open-extension-listing' || action === 'open-updates' || action === 'reader-view' || action === 'capture-page' || action === 'export-pdf' || action === 'translate-page' || action === 'mini-window' || action === 'export-backup' || action === 'import-backup' || action === 'choose-wallpaper') {
       if (action === 'remove-extension' && !window.confirm('Remove this extension from the browser?')) return;
       if (action === 'remove-extension') {
         const result = await api.removeExtension(value);

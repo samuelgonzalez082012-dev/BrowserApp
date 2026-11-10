@@ -29,6 +29,8 @@ const developerTools = require('./developer-tools');
 const privacyAudit = require('./privacy-audit');
 const { execFile } = require('node:child_process');
 const pluginManager = require('./plugin-manager');
+const workflowEngine = require('./workflow-engine');
+const { LocalModelAdapter } = require('./local-model-adapter');
 
 const earlyProfileRegistry = (() => { try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'browser-profiles.json'), 'utf8')); } catch { return { activeProfileId: 'personal' }; } })();
 const earlyProfileId = /^[a-z0-9_-]{2,64}$/i.test(earlyProfileRegistry.activeProfileId || '') ? earlyProfileRegistry.activeProfileId : 'personal';
@@ -673,7 +675,7 @@ function readPersistence() {
     extensionDisabledPaths: Array.isArray(savedData.extensionDisabledPaths) ? savedData.extensionDisabledPaths.filter((item) => typeof item === 'string' && path.isAbsolute(item)).slice(0, 100) : [],
     extensionRegistry: Array.isArray(savedData.extensionRegistry) ? savedData.extensionRegistry.filter((item) => item && typeof item.path === 'string' && path.isAbsolute(item.path) && typeof item.id === 'string').slice(0, 100) : [],
     permissionExpiry: savedData.permissionExpiry && typeof savedData.permissionExpiry === 'object' && !Array.isArray(savedData.permissionExpiry) ? Object.fromEntries(Object.entries(savedData.permissionExpiry).filter(([key, value]) => typeof key === 'string' && Number.isFinite(Number(value)))) : {},
-    automations: Array.isArray(savedData.automations) ? savedData.automations.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.steps)).map((item) => ({ id: item.id.slice(0, 100), name: item.name.slice(0, 80), steps: item.steps.filter((step) => step && typeof step.type === 'string').slice(0, 20), createdAt: Number(item.createdAt) || Date.now() })).slice(0, 100) : [],
+    automations: workflowEngine.sanitizeWorkflows(savedData.automations),
     healthEvents: Array.isArray(savedData.healthEvents) ? savedData.healthEvents.filter((item) => item && typeof item.id === 'string' && typeof item.type === 'string').slice(0, 150).map((item) => ({ id: item.id.slice(0, 100), type: item.type.slice(0, 48), title: String(item.title || '').slice(0, 120), detail: String(item.detail || '').slice(0, 500), at: Number(item.at) || Date.now(), url: isSafeWebUrl(item.url) ? String(item.url).slice(0, 1500) : '' })) : []
   };
   // Electron DownloadItem instances cannot be restored across application launches.
@@ -2634,19 +2636,28 @@ function openBuiltInService(serviceId) {
 const ALLOWED_WORKFLOW_STEPS = new Set(['new-tab', 'new-private-tab', 'sleep-inactive', 'save-session', 'capture-page', 'reader-view', 'export-pdf', 'translate-page', 'bookmark-active', 'open-services', 'open-passwords', 'open-settings', 'open-url']);
 
 function createBrowserWorkflow(payload = {}) {
-  const name = String(payload.name || '').trim().slice(0, 70);
-  const steps = Array.isArray(payload.steps) ? payload.steps.filter((step) => step && ALLOWED_WORKFLOW_STEPS.has(step.type)).slice(0, 20).map((step) => ({ type: step.type, value: step.type === 'open-url' ? String(step.value || '').trim().slice(0, 1500) : '' })) : [];
-  if (!name || !steps.length) return { ok: false, error: 'Enter a workflow name and choose at least one supported step.' };
-  for (const step of steps) if (step.type === 'open-url' && !isSafeWebUrl(normalizeAddress(step.value))) return { ok: false, error: 'Workflow URLs must be safe HTTP or HTTPS website addresses.' };
-  data.automations = data.automations || [];
-  data.automations.unshift({ id: makeId('workflow'), name, steps, createdAt: Date.now() });
-  data.automations = data.automations.slice(0, 100); saveData(); sendState(); return { ok: true };
+  try {
+    const workflow = workflowEngine.createWorkflow({ id: makeId('workflow'), name: payload.name, steps: payload.steps });
+    data.automations = [workflow, ...(data.automations || [])].slice(0, 100);
+    saveData(); sendState(); return { ok: true, workflow };
+  } catch (error) { return { ok: false, error: error.message }; }
 }
 
-async function runBrowserWorkflow(id) {
+function updateBrowserWorkflow(payload = {}) {
+  const index = (data.automations || []).findIndex((item) => item.id === String(payload.id));
+  if (index < 0) return { ok: false, error: 'Workflow not found.' };
+  try {
+    data.automations[index] = workflowEngine.updateWorkflow(data.automations[index], { name: payload.name, steps: payload.steps });
+    saveData(); sendState(); return { ok: true, workflow: data.automations[index] };
+  } catch (error) { return { ok: false, error: error.message }; }
+}
+
+async function runBrowserWorkflow(id, options = {}) {
   if (workflowExecution) return { ok: false, error: 'A workflow is already running.' };
   const workflow = (data.automations || []).find((item) => item.id === String(id));
   if (!workflow) return { ok: false, error: 'Workflow not found.' };
+  const confirmation = workflowEngine.getConfirmationSummary(workflow);
+  if (confirmation.required && options.confirmed !== true) return { ok: false, requiresConfirmation: true, summary: confirmation.steps };
   workflowExecution = true;
   let completed = 0;
   try {
@@ -2656,7 +2667,7 @@ async function runBrowserWorkflow(id) {
         case 'new-private-tab': createTab(null, { activate: true, isPrivate: true }); break;
         case 'open-url': createTab(normalizeAddress(step.value), { activate: true }); break;
         case 'sleep-inactive': await runPanelAction('sleep-inactive', {}); break;
-        case 'save-session': saveCurrentSession(`${workflow.name} · ${new Date().toLocaleDateString()}`); break;
+        case 'save-session': saveCurrentSession(workflow.name + ' · ' + new Date().toLocaleDateString()); break;
         case 'capture-page': await captureActivePage(); break;
         case 'reader-view': await openReaderView(); break;
         case 'export-pdf': await exportActivePdf(); break;
@@ -2668,11 +2679,13 @@ async function runBrowserWorkflow(id) {
       }
       completed += 1;
     }
-    addBrowserNotification('Workflow complete', `${workflow.name}: ${completed} steps completed.`);
+    recordSecurityEvent('workflow-run', 'Browser workflow completed', workflow.name + ': ' + completed + ' steps.');
+    addBrowserNotification('Workflow complete', workflow.name + ': ' + completed + ' steps completed.');
     return { ok: true, completed };
   } catch (error) { return { ok: false, error: error.message, completed }; }
   finally { workflowExecution = false; sendState(); }
 }
+
 
 async function loadExtensionCatalog() {
   const catalogUrl = String(settings.extensionCatalogUrl || '').trim();
@@ -2815,14 +2828,16 @@ async function askAi(request) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
   try {
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }];
+    if (localEndpoint) {
+      const adapter = new LocalModelAdapter({ endpoint: settings.aiEndpoint, model: settings.aiModel, timeoutMs: 45000 });
+      try { return { ok: true, answer: await adapter.complete(messages) }; }
+      catch (error) { return { ok: false, error: error.name === 'AbortError' ? 'Local model request timed out.' : error.message }; }
+    }
     const response = await fetch(settings.aiEndpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        model: settings.aiModel,
-        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
-        temperature: 0.3
-      }),
+      body: JSON.stringify({ model: settings.aiModel, messages, temperature: 0.3 }),
       signal: controller.signal
     });
     const payload = await response.json().catch(() => ({}));
@@ -4318,7 +4333,8 @@ async function runPanelAction(action, payload = {}) {
     case 'vault-import': return importPasswordVault();
     case 'open-service': return openBuiltInService(payload.id);
     case 'create-workflow': return createBrowserWorkflow(payload);
-    case 'run-workflow': return runBrowserWorkflow(payload.id);
+    case 'update-workflow': return updateBrowserWorkflow(payload);
+    case 'run-workflow': return runBrowserWorkflow(payload.id, { confirmed: payload.confirmed === true });
     case 'delete-workflow': data.automations = (data.automations || []).filter((item) => item.id !== String(payload.id)); saveData(); sendState(); return { ok: true };
     case 'refresh-extension-catalog': return loadExtensionCatalog();
     case 'open-extension-listing': {
