@@ -33,7 +33,7 @@ async function reserveLoopbackPort() {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
   });
-  const { port } = server.address();
+  const port = server.address().port;
   await new Promise((resolve) => server.close(resolve));
   return port;
 }
@@ -70,7 +70,7 @@ class FirefoxLauncher {
       const onError = (error) => { cleanup(); reject(error); };
       const onExit = (code, signal) => {
         cleanup();
-        reject(new Error(\`Firefox exited before startup (code \${code ?? 'unknown'}, signal \${signal || 'none'}).\`));
+        reject(new Error('Firefox exited before startup (code ' + (code === null ? 'unknown' : code) + ', signal ' + (signal || 'none') + ').'));
       };
       const cleanup = () => {
         this.child.removeListener('error', onError);
@@ -86,9 +86,9 @@ class FirefoxLauncher {
       executable: this.executable,
       pid: this.child.pid,
       port: this.port,
-      websocketUrl: \`ws://127.0.0.1:\${this.port}/session\`,
+      websocketUrl: 'ws://127.0.0.1:' + this.port + '/session',
       profilePath: this.profilePath,
-      args: [...args]
+      args: args.slice()
     };
   }
 
@@ -103,6 +103,7 @@ class FirefoxLauncher {
 
     await new Promise((resolve) => {
       let settled = false;
+      let timeout;
       const finish = () => {
         if (settled) return;
         settled = true;
@@ -110,7 +111,7 @@ class FirefoxLauncher {
         child.removeListener('exit', finish);
         resolve();
       };
-      const timeout = setTimeout(() => {
+      timeout = setTimeout(() => {
         if (child.exitCode === null) {
           try { child.kill(); } catch {}
         }
