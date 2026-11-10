@@ -67,13 +67,12 @@ class WebDriverBidiClient extends EventEmitter {
       socket.addEventListener('error', onError, { once: true });
       socket.addEventListener('message', (event) => this._onMessage(event.data));
       socket.addEventListener('close', () => {
-        this.closed = true;
         for (const entry of this.pending.values()) {
           clearTimeout(entry.timeout);
           entry.reject(new Error('Firefox WebDriver BiDi connection closed.'));
         }
         this.pending.clear();
-        this.emit('disconnected');
+        if (!this.closed) this.emit('disconnected');
       });
     });
   }
@@ -125,15 +124,15 @@ class WebDriverBidiClient extends EventEmitter {
     return context.context;
   }
 
-  async navigate(context, url) {
+  navigate(context, url) {
     return this.command('browsingContext.navigate', { context, url, wait: 'none' });
   }
 
-  async reload(context) {
+  reload(context) {
     return this.command('browsingContext.reload', { context, wait: 'none' });
   }
 
-  async stop(context) {
+  stop(context) {
     return this.command('browsingContext.stopLoad', { context });
   }
 
