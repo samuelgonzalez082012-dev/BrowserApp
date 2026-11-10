@@ -414,6 +414,13 @@ function renderAccessibility() {
 }
 function renderDeveloper() {
   const logs = (state.networkLog || []).slice().reverse().slice(0,80).map((item) => `<div class="log-row"><strong>${escapeHtml(item.method)} · ${escapeHtml(item.resourceType)} · ${escapeHtml(item.status)}</strong><small>${escapeHtml(item.url)}</small></div>`).join('');
+  const presets = developerToolsPlaceholder();
+  return `<section class="section-block"><div class="section-heading"><div><strong>Developer toolkit</strong><p>Inspect the active page, review request events, and test responsive layouts.</p></div></div><div class="tool-grid">${actionButton('Open DevTools (F12)','open-developer-tools','','primary-button')}${actionButton('Save page source','view-source')}${actionButton('Inspect page structure','inspect-page-structure')}${actionButton('Inspect selected text style','inspect-selection-style')}</div><div class="folder-setting"><div><strong>Responsive viewport</strong><small>${state.responsiveViewport ? escapeHtml(state.responsiveViewport.label + ' · ' + state.responsiveViewport.width + ' × ' + state.responsiveViewport.height) : 'Use a fixed test viewport for the active tab.'}</small></div><select id="responsive-preset" aria-label="Responsive viewport"><option value="">Choose device preset</option><option value="mobile-small">Small mobile</option><option value="mobile">Mobile</option><option value="mobile-large">Large mobile</option><option value="tablet">Tablet portrait</option><option value="laptop">Laptop</option><option value="desktop">Desktop</option></select>${actionButton('Apply','apply-responsive-viewport')}${actionButton('Exit','clear-responsive-viewport')}</div><p class="muted-note">Responsive mode resizes the active page viewport; it does not emulate mobile hardware, touch sensors, or device-specific user agents.</p></section><section class="section-block"><div class="section-heading"><div><strong>JSON viewer</strong><p>Format and inspect JSON from the active JSON page or pasted text.</p></div></div><textarea id="dev-json-input" class="full-textarea" rows="5" placeholder="Paste JSON here, or leave blank to inspect the active page…"></textarea><div class="button-line">${actionButton('Format JSON','inspect-json','','primary-button')}</div><pre id="dev-output" class="code-output" hidden></pre></section><section class="section-block"><div class="section-heading"><div><strong>Recent network activity</strong><p>Last ${logs ? Math.min(80,(state.networkLog||[]).length) : 0} recorded requests. This is a diagnostic request log, not a full HAR capture.</p></div></div><input class="full-input" id="network-search" type="search" placeholder="Filter requests by URL, method or status"><div id="network-log-rows">${logs || emptyState('No network events','Visit a website to populate the request log.')}</div></section>`;
+}
+function developerToolsPlaceholder() { return ''; }
+
+
+  const logs = (state.networkLog || []).slice().reverse().slice(0,80).map((item) => `<div class="log-row"><strong>${escapeHtml(item.method)} · ${escapeHtml(item.resourceType)} · ${escapeHtml(item.status)}</strong><small>${escapeHtml(item.url)}</small></div>`).join('');
   return `<section class="section-block"><div class="section-heading"><div><strong>Developer toolkit</strong><p>Open Chromium DevTools, inspect the current page, and review recent network request events.</p></div></div><div class="tool-grid">${actionButton('Open DevTools (F12)','open-developer-tools','','primary-button')}${actionButton('Save page source','view-source')}${actionButton('Refresh network log','refresh-network-log')}</div><p class="muted-note">Chromium DevTools includes Elements, Console, Network and Performance tools. Split-view tabs have their own DevTools when their pane is active.</p></section><section class="section-block"><div class="section-heading"><div><strong>Recent network activity</strong><p>Last ${logs ? Math.min(80,(state.networkLog||[]).length) : 0} recorded requests. This diagnostic view is not a full HAR capture.</p></div></div>${logs || emptyState('No network events','Visit a website to populate the request log.')}</section>`;
 }
 function renderUpdates() {
@@ -583,6 +590,28 @@ async function handleClick(event) {
     if (action === 'import-theme-profile') {
       const result = await api.action(action);
       showToast(result?.ok ? 'Theme imported.' : result?.cancelled ? 'Import cancelled.' : result?.error || 'Import failed.', !result?.ok && !result?.cancelled); renderContent(); return;
+    }
+    if (action === 'apply-responsive-viewport') {
+      const result = await api.action('set-responsive-viewport', { preset: document.getElementById('responsive-preset')?.value || '' });
+      showToast(result?.ok ? 'Responsive viewport enabled.' : result?.error || 'Could not apply viewport.', !result?.ok); renderContent(); return;
+    }
+    if (action === 'clear-responsive-viewport') {
+      const result = await api.action(action);
+      showToast(result?.ok ? 'Responsive viewport disabled.' : result?.error || 'Could not reset viewport.', !result?.ok); renderContent(); return;
+    }
+    if (action === 'inspect-json') {
+      const result = await api.action(action, { text: document.getElementById('dev-json-input')?.value || '' });
+      const output = document.getElementById('dev-output');
+      if (result?.ok && output) { output.hidden = false; output.textContent = result.result.pretty; showToast('JSON parsed successfully.'); }
+      else showToast(result?.error || 'Could not parse JSON.', true);
+      return;
+    }
+    if (action === 'inspect-page-structure' || action === 'inspect-selection-style') {
+      const result = await api.action(action);
+      const output = document.getElementById('dev-output');
+      if (result?.ok && output) { output.hidden = false; output.textContent = JSON.stringify(result.result, null, 2); }
+      else showToast(result?.error || 'Inspection failed.', true);
+      return;
     }
     if (action === 'capture-research-article') {
       const result = await api.action(action);
@@ -866,6 +895,10 @@ async function handleClick(event) {
 
 content.addEventListener('click', (event) => { handleClick(event).catch((error) => showToast(error.message, true)); });
 content.addEventListener('input', (event) => {
+  if (event.target.id === 'network-search') {
+    const query = event.target.value.toLowerCase();
+    document.querySelectorAll('#network-log-rows .log-row').forEach((row) => { row.hidden = !row.textContent.toLowerCase().includes(query); });
+  }
   if (event.target.id === 'research-search') {
     api.action('search-research-library', { query: event.target.value }).then((result) => {
       const allowed = new Set(result?.ids || []);

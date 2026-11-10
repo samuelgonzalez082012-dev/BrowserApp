@@ -25,6 +25,7 @@ const { normalizeContainerDomain, resolveContainerForUrl: resolveContainerRoute 
 const { DownloadQueue } = require('./download-queue');
 const researchLibrary = require('./research-library');
 const themeStudio = require('./theme-studio');
+const developerTools = require('./developer-tools');
 
 const WINDOW_WIDTH = 1360;
 const WINDOW_HEIGHT = 900;
@@ -212,6 +213,7 @@ let nextTabNumber = 1;
 let panelVisible = false;
 let activePanelSection = 'workspaces';
 let previewThemeProfileId = '';
+let responsiveViewport = null;
 let settings = { ...DEFAULT_SETTINGS };
 let data = defaultData();
 let settingsFile = null;
@@ -953,6 +955,7 @@ function getPublicState() {
     workspaceThemeProfiles: { ...(data.workspaceThemeProfiles || {}) },
     themePreviewActive: Boolean(previewThemeProfileId),
     themePreviewProfileId: previewThemeProfileId,
+    responsiveViewport: responsiveViewport ? { ...responsiveViewport } : null,
     defaultEngine: browserEngineManager.defaultEngineId,
     availableEngines: browserEngineManager.listEngines()
   };
@@ -1016,6 +1019,19 @@ function updateLayout() {
   if (webPanelView && !webPanelView.webContents.isDestroyed()) webPanelView.setBounds({ x: webPanelX, y: chromeHeight, width: webPanelWidth, height: bodyHeight });
   if (panelVisible) return;
   if (!visible.length) return;
+  if (responsiveViewport) {
+    const activeTab = getActiveTab();
+    if (!activeTab || activeTab.engineTab.isDestroyed()) return;
+    const viewportWidth = Math.min(responsiveViewport.width, contentWidth);
+    const viewportHeight = Math.min(responsiveViewport.height, bodyHeight);
+    activeTab.engineTab.setBounds({
+      x: contentX + Math.floor((contentWidth - viewportWidth) / 2),
+      y: chromeHeight + Math.floor((bodyHeight - viewportHeight) / 2),
+      width: viewportWidth,
+      height: viewportHeight
+    });
+    return;
+  }
   if (visible.length === 1) {
     visible[0].engineTab.setBounds({ x: contentX, y: chromeHeight, width: contentWidth, height: bodyHeight });
     return;
@@ -3837,6 +3853,54 @@ async function runPanelAction(action, payload = {}) {
     }
     case 'export-theme-profile': return exportThemeProfile(payload.id);
     case 'import-theme-profile': return importThemeProfile();
+    case 'set-responsive-viewport': {
+      const preset = developerTools.getViewportPreset(payload.preset);
+      if (!preset) return { ok: false, error: 'Choose a supported device preset.' };
+      responsiveViewport = { ...preset };
+      splitTabIds = [];
+      syncChildViews(); sendState(); return { ok: true, viewport: responsiveViewport };
+    }
+    case 'clear-responsive-viewport': responsiveViewport = null; syncChildViews(); sendState(); return { ok: true };
+    case 'inspect-json': {
+      let source = String(payload.text || '');
+      if (!source) {
+        const tab = getActiveTab();
+        if (!tab || tab.engineTab.isDestroyed() || tab.isNewTab || tab.sleeping) return { ok: false, error: 'Open a JSON page or paste JSON into the inspector.' };
+        try { source = await tab.engineTab.executeJavaScript('document.body ? document.body.innerText : ""'); }
+        catch (error) { return { ok: false, error: error.message }; }
+      }
+      try { return { ok: true, result: developerTools.inspectJson(source) }; }
+      catch (error) { return { ok: false, error: error.message }; }
+    }
+    case 'inspect-page-structure': {
+      const tab = getActiveTab();
+      if (!tab || tab.engineTab.isDestroyed() || tab.isNewTab || tab.sleeping) return { ok: false, error: 'Open a webpage first.' };
+      try {
+        const raw = await tab.engineTab.executeJavaScript(`(() => ({
+          title: document.title, url: location.href,
+          headings: [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((node) => ({ level: Number(node.tagName.slice(1)), text: node.innerText || node.textContent || '' })),
+          links: [...document.querySelectorAll('a[href]')].map((node) => ({ text: node.innerText || node.getAttribute('aria-label') || '', url: node.href })),
+          images: [...document.images].map((node) => ({ alt: node.alt || '', src: node.currentSrc || node.src || '' })),
+          forms: document.forms.length, tables: document.querySelectorAll('table').length
+        }))()`);
+        return { ok: true, result: developerTools.summarizePageStructure(raw) };
+      } catch (error) { return { ok: false, error: error.message }; }
+    }
+    case 'inspect-selection-style': {
+      const tab = getActiveTab();
+      if (!tab || tab.engineTab.isDestroyed() || tab.isNewTab || tab.sleeping) return { ok: false, error: 'Open a webpage and select some text first.' };
+      try {
+        const result = await tab.engineTab.executeJavaScript(`(() => {
+          const selection = window.getSelection();
+          const node = selection && selection.anchorNode;
+          const element = node && (node.nodeType === 1 ? node : node.parentElement);
+          if (!element) return null;
+          const style = getComputedStyle(element);
+          return { tag: element.tagName.toLowerCase(), text: String(selection || '').slice(0, 500), fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight, color: style.color, backgroundColor: style.backgroundColor, lineHeight: style.lineHeight };
+        })()`);
+        return result ? { ok: true, result } : { ok: false, error: 'Select text on the page, then inspect its styling.' };
+      } catch (error) { return { ok: false, error: error.message }; }
+    }
     case 'capture-research-article': return captureResearchArticle();
     case 'open-research-item': return openResearchItem(payload.id);
     case 'delete-research-item':
