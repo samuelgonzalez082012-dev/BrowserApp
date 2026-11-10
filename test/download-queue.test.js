@@ -71,6 +71,7 @@ test('due scheduled jobs are promoted FIFO when their time arrives', () => {
   queue.enqueue('b');
   assert.equal(queue.status('a'), 'scheduled');
   assert.equal(queue.status('b'), 'active');
+  assert.deepEqual(queue.finish('b'), []);
   assert.deepEqual(queue.activateDue(now + 11000), ['a']);
   assert.equal(queue.status('a'), 'active');
 });
