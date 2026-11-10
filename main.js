@@ -560,7 +560,7 @@ function readPersistence() {
     accessibilityHighContrast: Boolean(savedSettings.accessibilityHighContrast),
     accessibilityReducedMotion: Boolean(savedSettings.accessibilityReducedMotion)
   };
-  if (!Object.hasOwn(SEARCH_ENGINES, settings.searchEngine) && !settings.customSearchEngines.some((engine) => engine.id === settings.searchEngine)) settings.searchEngine = 'google';
+  if (!Object.hasOwn(SEARCH_ENGINES, settings.searchEngine) && !settings.customSearchEngines.some((engine) => engine.id === settings.searchEngine)) settings.searchEngine = 'brave';
   aiKeyEncrypted = typeof savedSettings.aiKeyEncrypted === 'string' ? savedSettings.aiKeyEncrypted : null;
   downloadQueue.setLimit(settings.maxConcurrentDownloads);
 
