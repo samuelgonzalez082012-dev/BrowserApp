@@ -642,6 +642,11 @@ function readPersistence() {
     automations: Array.isArray(savedData.automations) ? savedData.automations.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.steps)).map((item) => ({ id: item.id.slice(0, 100), name: item.name.slice(0, 80), steps: item.steps.filter((step) => step && typeof step.type === 'string').slice(0, 20), createdAt: Number(item.createdAt) || Date.now() })).slice(0, 100) : [],
     healthEvents: Array.isArray(savedData.healthEvents) ? savedData.healthEvents.filter((item) => item && typeof item.id === 'string' && typeof item.type === 'string').slice(0, 150).map((item) => ({ id: item.id.slice(0, 100), type: item.type.slice(0, 48), title: String(item.title || '').slice(0, 120), detail: String(item.detail || '').slice(0, 500), at: Number(item.at) || Date.now(), url: isSafeWebUrl(item.url) ? String(item.url).slice(0, 1500) : '' })) : []
   };
+  // Electron DownloadItem instances cannot be restored across application launches.
+  // Never leave persisted transfers looking active after a restart.
+  data.downloads = data.downloads.map((item) => ['progressing', 'queued', 'paused'].includes(item.state)
+    ? { ...item, state: 'interrupted', queued: false }
+    : item);
   if (savedData.permissions && typeof savedData.permissions === 'object' && !Array.isArray(savedData.permissions)) {
     for (const [origin, entries] of Object.entries(savedData.permissions)) {
       const safeOrigin = getOrigin(origin);
