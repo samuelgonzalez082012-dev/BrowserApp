@@ -8,7 +8,7 @@ const { normalizeWebUrl, FirefoxEngineAdapter } = require('../firefox-poc/firefo
 const { WindowsWindowHost } = require('../firefox-poc/windows-window-host');
 
 test('Firefox discovery honors an explicit executable override', () => {
-  const executable = path.join('C:', 'Apps', 'Firefox', 'firefox.exe');
+  const executable = path.win32.join('C:', 'Apps', 'Firefox', 'firefox.exe');
   const found = resolveFirefoxExecutable({
     platform: 'win32',
     env: { FIREFOX_PATH: executable },
@@ -18,10 +18,10 @@ test('Firefox discovery honors an explicit executable override', () => {
 });
 
 test('Firefox discovery checks standard Windows installation paths', () => {
-  const expected = path.join('C:', 'Program Files', 'Mozilla Firefox', 'firefox.exe');
+  const expected = path.win32.join('C:/Program Files', 'Mozilla Firefox', 'firefox.exe');
   const found = resolveFirefoxExecutable({
     platform: 'win32',
-    env: { PROGRAMFILES: 'C:\\\\Program Files' },
+    env: { PROGRAMFILES: 'C:/Program Files' },
     existsSync: (candidate) => candidate === expected
   });
   assert.equal(found, expected);
@@ -32,6 +32,7 @@ test('Firefox POC only accepts HTTP and HTTPS website navigation', () => {
   assert.equal(normalizeWebUrl('http://example.com/path'), 'http://example.com/path');
   assert.throws(() => normalizeWebUrl('file:///C:/secret.txt'), /limited to HTTP and HTTPS/);
   assert.throws(() => normalizeWebUrl('javascript:alert(1)'), /limited to HTTP and HTTPS/);
+  assert.throws(() => normalizeWebUrl('https://user:pass@example.com'), /embedded credentials/);
   assert.throws(() => normalizeWebUrl(''), /Enter a website address/);
 });
 
