@@ -23,6 +23,7 @@ const { EngineManager } = require('./engine-adapters/engine-manager');
 const { ChromiumEngineAdapter } = require('./engine-adapters/chromium-engine');
 const { normalizeContainerDomain, resolveContainerForUrl: resolveContainerRoute } = require('./container-routing');
 const { DownloadQueue } = require('./download-queue');
+const researchLibrary = require('./research-library');
 
 const WINDOW_WIDTH = 1360;
 const WINDOW_HEIGHT = 900;
@@ -175,6 +176,7 @@ function defaultData() {
     containerRules: [],
     notes: [],
     collections: [],
+    researchItems: [],
     sessions: [],
     webPanels: [],
     customCommands: [],
@@ -629,6 +631,7 @@ function readPersistence() {
     containerRules: safeContainerRules,
     notes: Array.isArray(savedData.notes) ? savedData.notes.filter((item) => item && typeof item.id === 'string' && typeof item.content === 'string').slice(0, 1000) : [],
     collections: Array.isArray(savedData.collections) ? savedData.collections.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.items)).slice(0, 300) : [],
+    researchItems: researchLibrary.sanitizeStoredItems(savedData.researchItems),
     sessions: Array.isArray(savedData.sessions) ? savedData.sessions.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.tabs)).slice(0, 100) : [],
     webPanels: Array.isArray(savedData.webPanels) ? savedData.webPanels.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && isSafeWebUrl(item.url)).slice(0, 50) : [],
     customCommands: Array.isArray(savedData.customCommands) ? savedData.customCommands.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.actions)).slice(0, 100) : [],
@@ -902,6 +905,7 @@ function getPublicState() {
     containerRules: data.containerRules || [],
     notes: data.notes.slice(0, 500),
     collections: data.collections.slice(0, 200),
+    researchItems: (data.researchItems || []).map((item) => ({ id: item.id, title: item.title, url: item.url, sourceRef: item.sourceRef, updatedAt: item.updatedAt, versionCount: (item.versions || []).length, versions: (item.versions || []).map((version) => ({ id: version.id, createdAt: version.createdAt, wordCount: version.wordCount })), annotations: (item.annotations || []).map((annotation) => ({ ...annotation })) })),
     sessions: data.sessions.slice(0, 100),
     webPanels: data.webPanels.slice(0, 50),
     customCommands: data.customCommands.slice(0, 100),
@@ -3707,6 +3711,52 @@ async function openPageSource() {
   } catch (error) { return { ok: false, error: error.message }; }
 }
 
+async function captureResearchArticle() {
+  const tab = getActiveTab();
+  if (!tab || tab.isPrivate || isTemporaryContainerTab(tab) || tab.isNewTab || tab.sleeping || tab.engineTab.isDestroyed()) {
+    return { ok: false, error: 'Open a normal, loaded webpage before saving it to the Research Library.' };
+  }
+  try {
+    const extracted = await tab.engineTab.executeJavaScript(`(() => {
+      const root = document.querySelector('article') || document.querySelector('main') || document.body;
+      const clone = root.cloneNode(true);
+      clone.querySelectorAll('script,style,noscript,nav,header,footer,aside,form,button,input,select,textarea,iframe,svg,canvas,[aria-hidden="true"]').forEach((node) => node.remove());
+      const canonical = document.querySelector('link[rel="canonical"]')?.href || location.href;
+      const description = document.querySelector('meta[name="description"]')?.content || document.querySelector('meta[property="og:description"]')?.content || '';
+      return { title: document.title, url: location.href, sourceRef: canonical, description, content: (clone.innerText || clone.textContent || '').replace(/\\n{3,}/g, '\\n\\n').slice(0, 500000), selectedText: String(window.getSelection?.() || '').slice(0, 4000) };
+    })()`);
+    const result = researchLibrary.upsertArticle(data.researchItems || [], extracted);
+    data.researchItems = result.items;
+    saveData();
+    sendState();
+    return { ok: true, itemId: result.item.id, changed: result.changed, title: result.item.title, selectedText: extracted.selectedText || '' };
+  } catch (error) {
+    return { ok: false, error: 'Could not capture this page: ' + error.message };
+  }
+}
+
+function openResearchItem(itemId) {
+  const item = (data.researchItems || []).find((entry) => entry.id === String(itemId));
+  const version = item?.versions?.[0];
+  if (!item || !version) return { ok: false, error: 'Saved article not found.' };
+  const reader = new BrowserWindow({ width: 1000, height: 820, minWidth: 560, minHeight: 420, title: 'Offline research — ' + item.title.slice(0, 80), backgroundColor: '#f7f4ee', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
+  reader.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  reader.loadFile(FILES.reader, { query: { title: item.title, url: item.sourceRef || item.url, text: version.content } });
+  return { ok: true };
+}
+
+async function exportResearchLibrary(format = 'json') {
+  const markdown = format === 'markdown';
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export Research Library',
+    defaultPath: path.join(app.getPath('documents'), 'browser-research-library.' + (markdown ? 'md' : 'json')),
+    filters: markdown ? [{ name: 'Markdown', extensions: ['md'] }] : [{ name: 'JSON', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
+  fs.writeFileSync(result.filePath, researchLibrary.exportLibrary(data.researchItems || [], format), 'utf8');
+  return { ok: true, path: result.filePath };
+}
+
 async function runPanelAction(action, payload = {}) {
   const adblockActions = new Set(['toggle-adblock', 'adblock-lists', 'adblock-update', 'adblock-whitelist-toggle', 'adblock-add-host', 'adblock-remove-host', 'adblock-add-list', 'adblock-remove-list', 'set-adblock-auto-update']);
   if (safeMode && adblockActions.has(action)) return { ok: false, error: 'Ad blocking controls are temporarily disabled in Safe Mode. Restart normally to restore filtering.' };
@@ -3721,6 +3771,29 @@ async function runPanelAction(action, payload = {}) {
       for (const tab of tabs) if (tab.groupId === groupId) tab.groupId = null;
       saveData(); sendState(); return { ok: true };
     }
+    case 'capture-research-article': return captureResearchArticle();
+    case 'open-research-item': return openResearchItem(payload.id);
+    case 'delete-research-item':
+      data.researchItems = (data.researchItems || []).filter((item) => item.id !== String(payload.id));
+      saveData(); sendState(); return { ok: true };
+    case 'add-research-annotation': {
+      try {
+        const result = researchLibrary.addAnnotation(data.researchItems || [], payload.id, { type: payload.type, quote: payload.quote, note: payload.note });
+        data.researchItems = result.items; saveData(); sendState(); return { ok: true, annotation: result.annotation };
+      } catch (error) { return { ok: false, error: error.message }; }
+    }
+    case 'remove-research-annotation':
+      data.researchItems = researchLibrary.removeAnnotation(data.researchItems || [], payload.id, payload.annotationId);
+      saveData(); sendState(); return { ok: true };
+    case 'search-research-library':
+      return { ok: true, ids: researchLibrary.searchLibrary(data.researchItems || [], payload.query).map((item) => item.id) };
+    case 'compare-research-versions': {
+      const item = (data.researchItems || []).find((entry) => entry.id === String(payload.id));
+      if (!item || (item.versions || []).length < 2) return { ok: false, error: 'This article needs at least two saved versions.' };
+      try { return { ok: true, comparison: researchLibrary.compareVersions(item, payload.firstVersionId || item.versions[1].id, payload.secondVersionId || item.versions[0].id) }; }
+      catch (error) { return { ok: false, error: error.message }; }
+    }
+    case 'export-research-library': return exportResearchLibrary(payload.format);
     case 'create-note': return createNote(payload);
     case 'update-note': return updateNote(payload);
     case 'delete-note': data.notes = data.notes.filter((item) => item.id !== String(payload.id)); saveData(); sendState(); return { ok: true };

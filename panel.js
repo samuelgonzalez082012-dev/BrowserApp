@@ -19,7 +19,7 @@ const SECTION_NAMES = {
   performance: 'Performance manager', webpanels: 'Web panels', notifications: 'Notifications', tools: 'Research tools',
   profiles: 'Browser profiles', migration: 'Import and backup', sitecontrols: 'Site controls', apps: 'Installed web apps',
   accessibility: 'Accessibility and translation', developer: 'Developer tools', updates: 'Browser updates', adblock: 'Ad blocker',
-  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', about: 'About Minimal Browser'
+  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', research: 'Research library', about: 'About Minimal Browser'
 };
 
 function escapeHtml(value) {
@@ -467,6 +467,15 @@ function renderAbout() {
   return `<section class="section-block"><div class="about-hero"><strong>Minimal Browser 2.2</strong><p>A local-first Chromium productivity browser. Profiles, workspaces, tab containers, password vault, bookmarks, notes, sessions and preferences stay on this device unless you explicitly open a connected website or configure an AI provider.</p></div></section><section class="section-block"><div class="section-heading"><div><strong>V2.2 — Advanced Tab Ecosystem</strong><p>Separate browsing contexts with persistent or temporary container sessions, custom identities, per-domain routing and easy tab movement.</p></div></div><div class="feature-list"><article class="feature-card"><strong>Isolated site sessions</strong><p>Persistent containers use separate Chromium partitions for cookies, local storage, IndexedDB, cache and website logins.</p></article><article class="feature-card"><strong>Temporary containers</strong><p>Temporary container site data is not persisted. Its URLs are excluded from persistent history, tab restore, diagnostics, and download history.</p></article><article class="feature-card"><strong>Automatic assignment</strong><p>Domain rules route typed URLs and user-initiated top-level navigation into the most specific matching container.</p></article><article class="feature-card"><strong>Tab controls</strong><p>Open tabs in a container, move tabs from the tab context menu, and manage containers from Browser Hub.</p></article></div></section><section class="section-block"><div class="section-heading"><div><strong>Local-first promise</strong><p>Cloud synchronization has deliberately been left out. There is no browser account or cross-device sync system in this build.</p></div></div><div class="vault-warning">Important: moving a tab reloads it and may lose unsaved page state. Some site permissions and password vault credentials remain profile-wide, not container-specific. AI requests send page text to your configured provider only when you submit a request.</div></section><section class="section-block"><strong>Technical details</strong><p class="muted-note">Product version label: 2.2.0 · Electron / Chromium engine · Local profile storage · No package manifest included for Electron Fiddle.</p>${actionButton('Open browser updates','open-updates')}</section>`;
 }
 
+function renderResearchLibrary() {
+  const items = state.researchItems || [];
+  const rows = items.map((item) => {
+    const annotations = (item.annotations || []).map((annotation) => `<div class="log-row"><strong>${escapeHtml(annotation.type)} · ${escapeHtml(annotation.quote || 'Note')}</strong><small>${escapeHtml(annotation.note || '')}</small></div>`).join('');
+    return `<article class="feature-card"><div class="section-heading"><div><strong>${escapeHtml(item.title)}</strong><p><a href="#" data-action="open-research-item" data-value="${escapeHtml(item.id)}">${escapeHtml(item.sourceRef || item.url)}</a></p></div><span class="row-tag">${item.versionCount || 0} versions</span></div><p class="muted-note">Updated ${escapeHtml(dateLabel(item.updatedAt))} · ${(item.annotations || []).length} annotations</p><div class="button-line">${actionButton('Read offline','open-research-item',item.id)} ${actionButton('Add annotation','annotate-research-item',item.id)} ${actionButton('Compare versions','compare-research-item',item.id,'',Number(item.versionCount)<2)} ${actionButton('Delete','delete-research-item',item.id,'danger-button')}</div>${annotations}</article>`;
+  }).join('');
+  return `<section class="section-block"><div class="section-heading"><div><strong>Local research library</strong><p>Save readable page snapshots for offline reading, keep source references, annotate important passages, and search saved text.</p></div></div><div class="button-line">${actionButton('Save current page','capture-research-article','','primary-button')} ${actionButton('Export JSON','export-research-json')} ${actionButton('Export Markdown','export-research-markdown')}</div><input class="full-input" id="research-search" type="search" placeholder="Search saved articles, source URLs and full text"><div id="research-comparison" class="muted-note" hidden></div><div class="feature-list" id="research-items">${rows || emptyState('No saved research yet','Save a normal webpage to keep an offline snapshot here.')}</div></section>`;
+}
+
 function renderContent() {
   if (!state) return;
   document.documentElement.dataset.theme = state.settings?.theme || 'dark';
@@ -485,6 +494,7 @@ function renderContent() {
   const renderers = {
     workspaces: renderWorkspaces,
     bookmarks: renderBookmarks,
+    research: renderResearchLibrary,
     history: renderHistory,
     downloads: renderDownloads,
     split: renderSplit,
@@ -514,6 +524,51 @@ async function handleClick(event) {
   if (button) {
     const action = button.dataset.action;
     const value = button.dataset.value;
+    if (action === 'capture-research-article') {
+      const result = await api.action(action);
+      if (result?.ok) {
+        showToast(result.changed ? 'Article snapshot saved.' : 'This article version is already up to date.');
+        if (result.selectedText) {
+          const note = window.prompt('Add a note for the selected passage (optional):', '');
+          if (note !== null && (note.trim() || result.selectedText.trim())) await api.action('add-research-annotation', { id: result.itemId, type: 'highlight', quote: result.selectedText, note });
+        }
+      } else showToast(result?.error || 'Could not save article.', true);
+      renderContent(); return;
+    }
+    if (action === 'annotate-research-item') {
+      const quote = window.prompt('Selected passage or quote (optional):', '');
+      if (quote === null) return;
+      const note = window.prompt('Your note:', '');
+      if (note === null) return;
+      const result = await api.action('add-research-annotation', { id: value, type: quote.trim() ? 'highlight' : 'note', quote, note });
+      showToast(result?.ok ? 'Annotation saved.' : result?.error || 'Could not save annotation.', !result?.ok);
+      renderContent(); return;
+    }
+    if (action === 'compare-research-item') {
+      const result = await api.action(action, { id: value });
+      const output = document.getElementById('research-comparison');
+      if (result?.ok && output) {
+        const diff = result.comparison;
+        output.hidden = false;
+        output.textContent = 'Changes between saved versions: ' + diff.added.length + ' added and ' + diff.removed.length + ' removed paragraphs. Added: ' + diff.added.join(' | ').slice(0, 2500) + ' Removed: ' + diff.removed.join(' | ').slice(0, 2500);
+      } else showToast(result?.error || 'Could not compare versions.', true);
+      return;
+    }
+    if (action === 'export-research-json' || action === 'export-research-markdown') {
+      const result = await api.action('export-research-library', { format: action.endsWith('markdown') ? 'markdown' : 'json' });
+      showToast(result?.ok ? 'Research library exported.' : result?.cancelled ? 'Export cancelled.' : result?.error || 'Export failed.', !result?.ok && !result?.cancelled);
+      return;
+    }
+    if (action === 'open-research-item') {
+      const result = await api.action(action, { id: value });
+      if (!result?.ok) showToast(result?.error || 'Could not open saved article.', true);
+      return;
+    }
+    if (action === 'delete-research-item') {
+      if (!window.confirm('Delete this saved article and its annotations?')) return;
+      await runAction(action, value);
+      return;
+    }
     if (action === 'create-container') {
       const result = await api.action('create-container', { name: document.getElementById('new-container-name')?.value, icon: document.getElementById('new-container-icon')?.value, color: document.getElementById('new-container-color')?.value, temporary: Boolean(document.getElementById('new-container-temporary')?.checked) });
       if (result?.ok) showToast('Container created.'); else showToast(result?.error || 'Could not create container.', true);
@@ -751,6 +806,16 @@ async function handleClick(event) {
 
 content.addEventListener('click', (event) => { handleClick(event).catch((error) => showToast(error.message, true)); });
 content.addEventListener('input', (event) => {
+  if (event.target.id === 'research-search') {
+    api.action('search-research-library', { query: event.target.value }).then((result) => {
+      const allowed = new Set(result?.ids || []);
+      document.querySelectorAll('#research-items .feature-card').forEach((row) => {
+        const id = row.querySelector('[data-action="open-research-item"]')?.dataset.value;
+        row.hidden = !allowed.has(id);
+      });
+    }).catch(() => {});
+  }
+
   if (event.target.id === 'split-ratio') {
     const label = document.getElementById('split-ratio-value');
     if (label) label.textContent = `${event.target.value}%`;
