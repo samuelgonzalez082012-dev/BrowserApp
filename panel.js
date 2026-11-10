@@ -751,17 +751,17 @@ async function handleClick(event) {
 
 content.addEventListener('click', (event) => { handleClick(event).catch((error) => showToast(error.message, true)); });
 content.addEventListener('input', (event) => {
-  if (event.target.id === 'download-concurrency-choice') {
-    const result = await api.action('set-download-concurrency', { limit: Number(event.target.value) });
-    if (!result?.ok) showToast(result?.error || 'Could not update download concurrency.', true);
-    else showToast('Download concurrency updated.');
-  }
   if (event.target.id === 'split-ratio') {
     const label = document.getElementById('split-ratio-value');
     if (label) label.textContent = `${event.target.value}%`;
   }
 });
 content.addEventListener('change', async (event) => {
+  if (event.target.id === 'download-concurrency-choice') {
+    const result = await api.action('set-download-concurrency', { limit: Number(event.target.value) });
+    if (!result?.ok) showToast(result?.error || 'Could not update download concurrency.', true);
+    else showToast('Download concurrency updated.');
+  }
   if (event.target.id === 'split-ratio') {
     await api.action('set-split-ratio', { ratio: Number(event.target.value) });
   }
