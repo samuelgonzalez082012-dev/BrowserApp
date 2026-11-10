@@ -24,7 +24,7 @@ class WebDriverBidiClient extends EventEmitter {
       try {
         await this._openSocket();
         const response = await this.command('session.new', { capabilities: { alwaysMatch: {} } });
-        this.session = response.result?.sessionId || null;
+        this.session = response.result && response.result.sessionId || null;
         await this.command('session.subscribe', {
           events: [
             'browsingContext.navigationStarted',
@@ -44,7 +44,7 @@ class WebDriverBidiClient extends EventEmitter {
         if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
     }
-    throw new Error(\`Could not establish a Firefox WebDriver BiDi session: \${lastError?.message || 'connection timed out'}\`);
+    throw new Error('Could not establish a Firefox WebDriver BiDi session: ' + (lastError?.message || 'connection timed out'));
   }
 
   _openSocket() {
@@ -91,8 +91,9 @@ class WebDriverBidiClient extends EventEmitter {
     if (!pending) return;
     this.pending.delete(message.id);
     clearTimeout(pending.timeout);
-    if (message.type === 'error') pending.reject(new Error(\`\${message.error || 'BiDi error'}: \${message.message || 'Command failed'}\`));
-    else pending.resolve(message);
+    if (message.type === 'error') {
+      pending.reject(new Error((message.error || 'BiDi error') + ': ' + (message.message || 'Command failed')));
+    } else pending.resolve(message);
   }
 
   command(method, params = {}) {
@@ -101,7 +102,7 @@ class WebDriverBidiClient extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(\`Firefox BiDi command timed out: \${method}\`));
+        reject(new Error('Firefox BiDi command timed out: ' + method));
       }, this.commandTimeoutMs);
       this.pending.set(id, { resolve, reject, timeout });
       try { this.socket.send(JSON.stringify({ id, method, params })); }
@@ -115,8 +116,9 @@ class WebDriverBidiClient extends EventEmitter {
 
   async getTopLevelContext() {
     const response = await this.command('browsingContext.getTree', { maxDepth: 0 });
-    const context = (response.result?.contexts || []).find((item) => !item.parent);
-    if (!context?.context) throw new Error('Firefox started, but no top-level browsing context was found.');
+    const contexts = response.result && response.result.contexts || [];
+    const context = contexts.find((item) => !item.parent);
+    if (!context || !context.context) throw new Error('Firefox started, but no top-level browsing context was found.');
     return context.context;
   }
 
@@ -128,13 +130,15 @@ class WebDriverBidiClient extends EventEmitter {
     const response = await this.command('script.evaluate', {
       expression: String(expression), target: { context }, awaitPromise: true, resultOwnership: 'none'
     });
-    if (response.result?.exceptionDetails) throw new Error(response.result.exceptionDetails.text || 'Firefox script evaluation failed.');
-    return response.result?.result?.value;
+    if (response.result && response.result.exceptionDetails) {
+      throw new Error(response.result.exceptionDetails.text || 'Firefox script evaluation failed.');
+    }
+    return response.result && response.result.result && response.result.result.value;
   }
 
   async screenshot(context) {
     const response = await this.command('browsingContext.captureScreenshot', { context });
-    if (!response.result?.data) throw new Error('Firefox did not return a screenshot.');
+    if (!response.result || !response.result.data) throw new Error('Firefox did not return a screenshot.');
     return Buffer.from(response.result.data, 'base64');
   }
 
