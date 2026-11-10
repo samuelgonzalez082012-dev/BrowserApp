@@ -23,7 +23,6 @@ function resolveFirefoxExecutable(options = {}) {
   } else {
     candidates.push('/usr/bin/firefox', '/usr/bin/firefox-esr', '/snap/bin/firefox');
   }
-
   return candidates.find((candidate) => candidate && existsSync(candidate)) || null;
 }
 
@@ -36,6 +35,23 @@ async function reserveLoopbackPort() {
   const port = server.address().port;
   await new Promise((resolve) => server.close(resolve));
   return port;
+}
+
+function waitForExit(child, timeoutMs) {
+  if (!child || child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeout;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.removeListener('exit', finish);
+      resolve();
+    };
+    timeout = setTimeout(finish, timeoutMs);
+    child.once('exit', finish);
+  });
 }
 
 class FirefoxLauncher {
@@ -96,29 +112,40 @@ class FirefoxLauncher {
     return Boolean(this.child && this.child.exitCode === null && !this.child.killed);
   }
 
-  async close({ gracePeriodMs = 3000 } = {}) {
+  async close({ gracePeriodMs = 3000, forcePeriodMs = 2500 } = {}) {
     const child = this.child;
     this.child = null;
     if (!child || child.exitCode !== null) return;
 
-    await new Promise((resolve) => {
-      let settled = false;
-      let timeout;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        child.removeListener('exit', finish);
-        resolve();
-      };
-      timeout = setTimeout(() => {
-        if (child.exitCode === null) {
-          try { child.kill(); } catch {}
-        }
-        finish();
-      }, gracePeriodMs);
-      child.once('exit', finish);
-    });
+    await waitForExit(child, gracePeriodMs);
+    if (child.exitCode !== null) return;
+
+    if (this.platform === 'win32' && child.pid) {
+      await new Promise((resolve) => {
+        let settled = false;
+        let timer;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve();
+        };
+        try {
+          const killer = this.spawnProcess('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+            stdio: 'ignore',
+            windowsHide: true
+          });
+          killer.once('exit', finish);
+          killer.once('error', finish);
+          timer = setTimeout(finish, forcePeriodMs);
+        } catch { finish(); }
+      });
+    }
+
+    if (child.exitCode === null) {
+      try { child.kill(); } catch {}
+      await waitForExit(child, 1000);
+    }
   }
 }
 
