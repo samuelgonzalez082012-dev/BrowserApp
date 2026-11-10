@@ -145,9 +145,6 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 input[type="color"] { width: 42px; min-width: 42px; height: 35px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); }
 .tool-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .tool-grid .small-button { min-height: 38px; white-space: normal; }
-.section-nav { display:flex; flex-wrap:wrap; max-height:102px; overflow:auto; scrollbar-width:thin; align-content:flex-start; }
-.section-nav button { flex:0 0 auto; padding:0 8px; }
-
 /* Additional accent choices used by Personalization Studio. */
 :root[data-accent="cyan"] { --accent: #75d9e8; }
 :root[data-accent="amber"] { --accent: #e8bd73; }
