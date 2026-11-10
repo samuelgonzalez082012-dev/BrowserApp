@@ -142,6 +142,7 @@ const DEFAULT_SETTINGS = {
   translationTextTemplate: 'https://translate.google.com/?sl=auto&tl={target}&text={text}&op=translate',
   customSearchEngines: [],
   organizeDownloads: false,
+  maxConcurrentDownloads: 3,
   updateManifestUrl: '',
   extensionCatalogUrl: '',
   strictReferrerPolicy: true,
@@ -544,6 +545,7 @@ function readPersistence() {
     translationTextTemplate: validateTranslationTemplate(savedSettings.translationTextTemplate, 'text') || DEFAULT_SETTINGS.translationTextTemplate,
     customSearchEngines: Array.isArray(savedSettings.customSearchEngines) ? savedSettings.customSearchEngines.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.template === 'string' && item.template.includes('{searchTerms}') && /^https:\/\//i.test(item.template)).slice(0, 20) : [],
     organizeDownloads: Boolean(savedSettings.organizeDownloads),
+    maxConcurrentDownloads: Number.isInteger(Number(savedSettings.maxConcurrentDownloads)) ? Math.min(10, Math.max(1, Number(savedSettings.maxConcurrentDownloads))) : DEFAULT_SETTINGS.maxConcurrentDownloads,
     updateManifestUrl: typeof savedSettings.updateManifestUrl === 'string' ? savedSettings.updateManifestUrl.slice(0, 500) : '',
     extensionCatalogUrl: typeof savedSettings.extensionCatalogUrl === 'string' && /^https:\/\//i.test(savedSettings.extensionCatalogUrl) ? savedSettings.extensionCatalogUrl.slice(0, 500) : '',
     strictReferrerPolicy: savedSettings.strictReferrerPolicy !== false,
@@ -560,6 +562,7 @@ function readPersistence() {
   };
   if (!Object.hasOwn(SEARCH_ENGINES, settings.searchEngine) && !settings.customSearchEngines.some((engine) => engine.id === settings.searchEngine)) settings.searchEngine = 'google';
   aiKeyEncrypted = typeof savedSettings.aiKeyEncrypted === 'string' ? savedSettings.aiKeyEncrypted : null;
+  downloadQueue.setLimit(settings.maxConcurrentDownloads);
 
   const rawData = readJson(dataFile, defaultData());
   const savedData = rawData && typeof rawData === 'object' && !Array.isArray(rawData) ? rawData : defaultData();
@@ -3910,6 +3913,14 @@ async function runPanelAction(action, payload = {}) {
     case 'add-site-shortcut': return addSiteShortcut(payload);
     case 'remove-site-shortcut': data.siteShortcuts = data.siteShortcuts.filter((item) => item.id !== String(payload.id)); saveData(); sendState(); return { ok: true };
     case 'set-download-organization': settings.organizeDownloads = Boolean(payload.enabled); saveSettings(); sendState(); return { ok: true };
+    case 'set-download-concurrency': {
+      const limit = Number(payload.limit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 10) return { ok: false, error: 'Choose between 1 and 10 simultaneous downloads.' };
+      settings.maxConcurrentDownloads = limit;
+      const promoted = downloadQueue.setLimit(limit);
+      saveSettings(); startPromotedDownloads(promoted); sendState();
+      return { ok: true, limit };
+    }
     case 'set-accessibility': return applySettings(payload);
     case 'set-spellcheck': settings.spellcheckEnabled = Boolean(payload.enabled); saveSettings(); sendState(); return { ok: true };
     case 'open-installed-apps': return openInstalledAppsAtStartup();

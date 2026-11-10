@@ -22,7 +22,8 @@ LIMITATIONS
 - The queue is currently in-memory. A browser restart cannot resume an active
   Electron DownloadItem; persisted records remain subject to Electron's native
   interrupted-download behavior.
-- Concurrency defaults to three and is not yet configurable in Settings.
+- Download concurrency is configurable from the Downloads panel (1–10); the
+  default is three. Lowering the limit does not interrupt already-running files.
 - Persisted queued/paused/in-progress records are normalized to Interrupted at
   startup because Electron DownloadItem instances cannot survive app restarts.
 - Throughput graphs, scheduling, duplicate detection, file integrity metadata,

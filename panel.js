@@ -167,7 +167,8 @@ function renderDownloads() {
     <section class="section-block">
       <div class="section-heading"><div><strong>Downloads</strong><p>Progress and completed files.</p></div></div>
       <div class="folder-setting"><div><strong>Download location</strong><small>${escapeHtml(settingsPathLabel())}</small></div>${actionButton('Change', 'choose-download-folder')}</div>
-      <label class="toggle-row"><span><strong>Organize downloads automatically</strong><small>Sort new downloads into Images, Media, Documents, Archives and Other folders.</small></span><input id="download-organize-toggle" type="checkbox" ${state.settings?.organizeDownloads?'checked':''}></label><div class="button-line">${actionButton('Clear completed', 'download-clear-completed')}</div>
+      <label class="toggle-row"><span><strong>Organize downloads automatically</strong><small>Sort new downloads into Images, Media, Documents, Archives and Other folders.</small></span><input id="download-organize-toggle" type="checkbox" ${state.settings?.organizeDownloads?'checked':''}></label>
+      <div class="folder-setting"><div><strong>Simultaneous downloads</strong><small>Excess transfers wait in the queue. Active downloads are not stopped if you lower this limit.</small></div><select id="download-concurrency-choice" aria-label="Simultaneous downloads">${Array.from({length:10},(_,index)=>index+1).map((value)=>`<option value="${value}" ${Number(state.settings?.maxConcurrentDownloads || 3)===value?'selected':''}>${value}</option>`).join('')}</select></div><div class="button-line">${actionButton('Clear completed', 'download-clear-completed')}</div>
       <div class="download-list">${rows || emptyState('Nothing downloaded yet', 'Files you download will appear here.')}</div>
     </section>`;
 }
@@ -750,6 +751,11 @@ async function handleClick(event) {
 
 content.addEventListener('click', (event) => { handleClick(event).catch((error) => showToast(error.message, true)); });
 content.addEventListener('input', (event) => {
+  if (event.target.id === 'download-concurrency-choice') {
+    const result = await api.action('set-download-concurrency', { limit: Number(event.target.value) });
+    if (!result?.ok) showToast(result?.error || 'Could not update download concurrency.', true);
+    else showToast('Download concurrency updated.');
+  }
   if (event.target.id === 'split-ratio') {
     const label = document.getElementById('split-ratio-value');
     if (label) label.textContent = `${event.target.value}%`;
