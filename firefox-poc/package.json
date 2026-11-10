@@ -1,0 +1,7 @@
+{
+  "name": "browserapp-firefox-poc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated Firefox Gecko embedding proof of concept for BrowserApp",
+  "main": "main.js"
+}

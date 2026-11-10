@@ -8,7 +8,8 @@
   "author": "samue",
   "scripts": {
     "start": "electron .",
-    "test": "node --test"
+    "test": "node --test",
+    "firefox:poc": "electron ./firefox-poc"
   },
   "dependencies": {},
   "devDependencies": {

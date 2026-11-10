@@ -25,21 +25,17 @@ class FakeContents {
     this.closed = false;
     this.url = 'https://example.com/';
   }
-
   on(name, handler) {
     const listeners = this.handlers.get(name) || [];
     listeners.push(handler);
     this.handlers.set(name, listeners);
   }
-
   removeListener(name, handler) {
     this.handlers.set(name, (this.handlers.get(name) || []).filter((item) => item !== handler));
   }
-
   emit(name, ...args) {
     for (const handler of this.handlers.get(name) || []) handler(...args);
   }
-
   isDestroyed() { return this.closed; }
   getURL() { return this.url; }
   getTitle() { return 'Example'; }
@@ -68,7 +64,6 @@ class FakeContents {
 
 class FakeView {
   static instances = [];
-
   constructor(options) {
     this.options = options;
     this.webContents = new FakeContents();
@@ -108,10 +103,11 @@ test('Chromium tab handle owns navigation, view hosting and cleanup', async () =
   const manager = new EngineManager();
   manager.register(new ChromiumEngineAdapter(FakeView));
   const tab = manager.createTab({ contextId: 'persist:test', preferences: { spellcheckEnabled: false } });
-  assert.equal(FakeView.last.options.webPreferences.partition, 'persist:test');
-  assert.equal(FakeView.last.options.webPreferences.nodeIntegration, false);
-  assert.equal(FakeView.last.options.webPreferences.sandbox, true);
-  assert.equal(FakeView.last.options.webPreferences.spellcheck, false);
+  const lastView = FakeView.instances.at(-1);
+  assert.equal(lastView.options.webPreferences.partition, 'persist:test');
+  assert.equal(lastView.options.webPreferences.nodeIntegration, false);
+  assert.equal(lastView.options.webPreferences.sandbox, true);
+  assert.equal(lastView.options.webPreferences.spellcheck, false);
   const window = new FakeWindow();
 
   assert.equal(tab.getURL(), 'https://example.com/');
