@@ -15,16 +15,16 @@ public static class BrowserAppNativeWindow {
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder value, int max);
-    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder value, int max);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
     [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
     [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW", SetLastError=true)] public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value);
     [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int width, int height, uint flags);
-    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int command);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hWnd);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll", SetLastError=true)] public static extern bool AttachThreadInput(uint attach, uint attachTo, bool attachState);
 
     public static IntPtr FindFirefoxWindow(int targetPid) {
         IntPtr best = IntPtr.Zero;
@@ -48,16 +48,42 @@ public static class BrowserAppNativeWindow {
     public static bool Resize(IntPtr hWnd, int x, int y, int width, int height) {
         return SetWindowPos(hWnd, IntPtr.Zero, x, y, Math.Max(1, width), Math.Max(1, height), 0x0004 | 0x0020 | 0x0040);
     }
+
+    public static bool FocusChild(IntPtr child, IntPtr parent) {
+        uint childPid;
+        uint parentPid;
+        uint childThread = GetWindowThreadProcessId(child, out childPid);
+        uint parentThread = GetWindowThreadProcessId(parent, out parentPid);
+        bool attached = false;
+        if (childThread != 0 && parentThread != 0 && childThread != parentThread) {
+            attached = AttachThreadInput(parentThread, childThread, true);
+        }
+        bool foreground = SetForegroundWindow(child);
+        SetFocus(child);
+        if (attached) AttachThreadInput(parentThread, childThread, false);
+        return foreground;
+    }
 }
 '@
 
 $script:attachedHandle = [IntPtr]::Zero
+$script:parentHandle = [IntPtr]::Zero
 $script:originalParent = [IntPtr]::Zero
 $script:originalStyle = [IntPtr]::Zero
 
 function Convert-Handle([string]$value) {
     $number = [Convert]::ToInt64($value, 16)
     return [IntPtr]::new($number)
+}
+
+function Restore-FirefoxWindow {
+    if ($script:attachedHandle -ne [IntPtr]::Zero) {
+        $null = [BrowserAppNativeWindow]::SetParent($script:attachedHandle, $script:originalParent)
+        $null = [BrowserAppNativeWindow]::SetWindowLongPtr($script:attachedHandle, -16, $script:originalStyle)
+        $null = [BrowserAppNativeWindow]::SetWindowPos($script:attachedHandle, [IntPtr]::Zero, 0, 0, 900, 650, 0x0004 -bor 0x0020 -bor 0x0040)
+    }
+    $script:attachedHandle = [IntPtr]::Zero
+    $script:parentHandle = [IntPtr]::Zero
 }
 
 function Invoke-Operation($request) {
@@ -79,8 +105,10 @@ function Invoke-Operation($request) {
                 throw 'Windows rejected SetParent while embedding Firefox.'
             }
             $script:attachedHandle = $child
+            $script:parentHandle = $parent
             $b = $request.bounds
             if (-not [BrowserAppNativeWindow]::Resize($child, [int]$b.x, [int]$b.y, [int]$b.width, [int]$b.height)) {
+                Restore-FirefoxWindow
                 throw 'Firefox was parented but its initial bounds could not be applied.'
             }
             return @{ embedded = $true; windowHandle = ('{0:X}' -f $child.ToInt64()); processId = [int]$request.processId }
@@ -93,28 +121,18 @@ function Invoke-Operation($request) {
         }
         'focus' {
             if ($script:attachedHandle -eq [IntPtr]::Zero) { throw 'Firefox is not embedded.' }
-            $null = [BrowserAppNativeWindow]::SetForegroundWindow($script:attachedHandle)
-            $null = [BrowserAppNativeWindow]::SetFocus($script:attachedHandle)
+            $null = [BrowserAppNativeWindow]::FocusChild($script:attachedHandle, $script:parentHandle)
             return @{ focused = $true }
         }
         'detach' {
-            if ($script:attachedHandle -ne [IntPtr]::Zero) {
-                $null = [BrowserAppNativeWindow]::SetParent($script:attachedHandle, $script:originalParent)
-                $null = [BrowserAppNativeWindow]::SetWindowLongPtr($script:attachedHandle, -16, $script:originalStyle)
-                $null = [BrowserAppNativeWindow]::SetWindowPos($script:attachedHandle, [IntPtr]::Zero, 0, 0, 900, 650, 0x0004 -bor 0x0020 -bor 0x0040)
-            }
-            $script:attachedHandle = [IntPtr]::Zero
+            Restore-FirefoxWindow
             return @{ detached = $true }
         }
         'shutdown' {
-            if ($script:attachedHandle -ne [IntPtr]::Zero) {
-                $null = [BrowserAppNativeWindow]::SetParent($script:attachedHandle, $script:originalParent)
-                $null = [BrowserAppNativeWindow]::SetWindowLongPtr($script:attachedHandle, -16, $script:originalStyle)
-            }
-            $script:attachedHandle = [IntPtr]::Zero
+            Restore-FirefoxWindow
             return @{ stopped = $true }
         }
-        default { throw "Unknown native window operation: $($request.operation)" }
+        default { throw ('Unknown native window operation: ' + $request.operation) }
     }
 }
 
