@@ -19,32 +19,61 @@ class WebDriverBidiClient extends EventEmitter {
 
   async connect({ attempts = 30, retryDelayMs = 300 } = {}) {
     let lastError;
+    let connected = false;
+
+    // Retry only the WebSocket startup. Firefox supports one active BiDi
+    // session, so retrying session.new can strand the first session and make
+    // every subsequent attempt fail with "Maximum number of active sessions".
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (this.closed) throw new Error('The WebDriver BiDi client was closed.');
       try {
         await this._openSocket();
-        const response = await this.command('session.new', { capabilities: { alwaysMatch: {} } });
-        this.session = response.result && response.result.sessionId || null;
-        await this.command('session.subscribe', {
-          events: [
-            'browsingContext.navigationStarted',
-            'browsingContext.navigationCommitted',
-            'browsingContext.domContentLoaded',
-            'browsingContext.load',
-            'browsingContext.navigationAborted',
-            'browsingContext.navigationFailed',
-            'browsingContext.contextCreated',
-            'browsingContext.contextDestroyed'
-          ]
-        });
-        return response;
+        connected = true;
+        break;
       } catch (error) {
         lastError = error;
         this._disposeSocket();
         if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
     }
-    throw new Error('Could not establish a Firefox WebDriver BiDi session: ' + (lastError?.message || 'connection timed out'));
+
+    if (!connected) {
+      throw new Error('Could not connect to the Firefox WebDriver BiDi websocket: ' +
+        (lastError?.message || 'connection timed out'));
+    }
+
+    try {
+      const response = await this.command('session.new', { capabilities: { alwaysMatch: {} } });
+      this.session = response.result && response.result.sessionId || null;
+      if (!this.session) throw new Error('Firefox accepted session.new but did not return a session ID.');
+
+      await this.command('session.subscribe', {
+        events: [
+          'browsingContext.navigationStarted',
+          'browsingContext.navigationCommitted',
+          'browsingContext.domContentLoaded',
+          'browsingContext.load',
+          'browsingContext.navigationAborted',
+          'browsingContext.navigationFailed',
+          'browsingContext.contextCreated',
+          'browsingContext.contextDestroyed'
+        ]
+      });
+      return response;
+    } catch (error) {
+      // If setup fails after session.new, explicitly release the single
+      // Firefox session before closing the transport.
+      if (this.session) {
+        try { await this.endSession(); } catch {}
+      }
+      this._disposeSocket();
+      const message = error?.message || 'unknown error';
+      if (/maximum number of active sessions/i.test(message)) {
+        throw new Error('Firefox already has an active WebDriver BiDi session. Close all Firefox processes and restart the proof of concept. ' +
+          'The previous session may have disconnected without sending session.end.');
+      }
+      throw new Error('Could not establish a Firefox WebDriver BiDi session: ' + message);
+    }
   }
 
   _openSocket() {
@@ -142,7 +171,20 @@ class WebDriverBidiClient extends EventEmitter {
     return Buffer.from(response.result.data, 'base64');
   }
 
+  async endSession() {
+    if (!this.session) return;
+    try {
+      if (this.socket && this.socket.readyState === 1) {
+        await this.command('session.end', {});
+      }
+    } finally {
+      this.session = null;
+    }
+  }
+
   async close() {
+    if (this.closed) return;
+    try { await this.endSession(); } catch {}
     this.closed = true;
     try { this.socket?.close(1000, 'BrowserApp Firefox POC closing'); } catch {}
     this._disposeSocket();
