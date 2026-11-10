@@ -20,7 +20,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - name: Parse native PowerShell host script
+      - name: Check Firefox POC JavaScript syntax
+        run: |
+          node --check firefox-poc/main.js
+          node --check firefox-poc/preload.js
+          node --check firefox-poc/renderer.js
+      - name: Parse and compile native PowerShell host
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -35,3 +40,5 @@ jobs:
             $errors | Format-List
             exit 1
           }
+          '{"id":1,"operation":"shutdown"}' | powershell.exe -NoProfile -ExecutionPolicy Bypass -File firefox-poc/windows-window-host.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
