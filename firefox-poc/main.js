@@ -53,14 +53,8 @@ function registerIpc() {
       return { ok: false, error: error.message };
     }
   });
-  ipcMain.handle('firefox-poc:back', () => {
-    const result = firefoxTab?.navigationHistory.goBack() || false;
-    return { ok: result };
-  });
-  ipcMain.handle('firefox-poc:forward', () => {
-    const result = firefoxTab?.navigationHistory.goForward() || false;
-    return { ok: result };
-  });
+  ipcMain.handle('firefox-poc:back', () => ({ ok: Boolean(firefoxTab?.navigationHistory.goBack()) }));
+  ipcMain.handle('firefox-poc:forward', () => ({ ok: Boolean(firefoxTab?.navigationHistory.goForward()) }));
   ipcMain.handle('firefox-poc:reload', async () => {
     try { await firefoxTab?.reload(); return { ok: true }; }
     catch (error) { return { ok: false, error: error.message }; }
@@ -116,7 +110,6 @@ app.whenReady().then(async () => {
   mainWindow.on('resize', () => {
     if (firefoxTab && !firefoxTab.isDestroyed()) firefoxTab.setBounds(getFirefoxBounds());
   });
-  mainWindow.on('focus', () => firefoxTab?.focus());
   mainWindow.on('closed', () => { mainWindow = null; closeFirefox().finally(() => app.quit()); });
 
   try {
