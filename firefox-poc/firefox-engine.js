@@ -36,7 +36,6 @@ class FirefoxEngineTab extends EventEmitter {
     this._closed = false;
     this._history = ['about:blank'];
     this._historyIndex = 0;
-    this._popupHandler = null;
     this.ready = this._initialize();
   }
 
@@ -219,7 +218,7 @@ class FirefoxEngineTab extends EventEmitter {
     return true;
   }
 
-  setPopupHandler(handler) { this._popupHandler = handler; }
+  setPopupHandler() {}
   async executeJavaScript(source) {
     await this.ready;
     if (this.isDestroyed()) throw new Error('The Firefox tab is closed.');
@@ -250,6 +249,7 @@ class FirefoxEngineTab extends EventEmitter {
     if (this._closed) return;
     this._closed = true;
     try { await this.host.detach(); } catch {}
+    try { await this.client?.command('browser.close', {}); } catch {}
     try { await this.client?.close(); } catch {}
     await this.launcher.close();
     this.emit('closed');
