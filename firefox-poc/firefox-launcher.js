@@ -51,26 +51,15 @@ class FirefoxLauncher {
   }
 
   async launch() {
-    if (this.platform !== 'win32') {
-      throw new Error('The Firefox embedding proof of concept currently supports Windows only.');
-    }
-    if (this.child && this.child.exitCode === null && !this.child.killed) {
-      throw new Error('The managed Firefox instance is already running.');
-    }
+    if (this.platform !== 'win32') throw new Error('The Firefox embedding proof of concept currently supports Windows only.');
+    if (this.child && this.child.exitCode === null && !this.child.killed) throw new Error('The managed Firefox instance is already running.');
     if (!this.executable || !fs.existsSync(this.executable)) {
       throw new Error('Firefox was not found. Install Firefox or set FIREFOX_PATH to firefox.exe.');
     }
 
     fs.mkdirSync(this.profilePath, { recursive: true });
     this.port = await reserveLoopbackPort();
-    const args = [
-      '-no-remote',
-      '-profile', this.profilePath,
-      '--remote-debugging-port', String(this.port),
-      '--new-window',
-      'about:blank'
-    ];
-
+    const args = ['-no-remote', '-profile', this.profilePath, '--remote-debugging-port', String(this.port), '--new-window', 'about:blank'];
     this.child = this.spawnProcess(this.executable, args, {
       stdio: 'ignore',
       windowsHide: false,
@@ -107,17 +96,27 @@ class FirefoxLauncher {
     return Boolean(this.child && this.child.exitCode === null && !this.child.killed);
   }
 
-  async close() {
+  async close({ gracePeriodMs = 3000 } = {}) {
     const child = this.child;
     this.child = null;
     if (!child || child.exitCode !== null) return;
+
     await new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        try { child.kill(); } catch {}
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        child.removeListener('exit', finish);
         resolve();
-      }, 2500);
-      child.once('exit', () => { clearTimeout(timeout); resolve(); });
-      try { child.kill(); } catch { clearTimeout(timeout); resolve(); }
+      };
+      const timeout = setTimeout(() => {
+        if (child.exitCode === null) {
+          try { child.kill(); } catch {}
+        }
+        finish();
+      }, gracePeriodMs);
+      child.once('exit', finish);
     });
   }
 }
