@@ -120,5 +120,9 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('before-quit', () => { closeFirefox(); });
+app.on('before-quit', (event) => {
+  if (closing) return;
+  event.preventDefault();
+  closeFirefox().finally(() => app.exit(0));
+});
 app.on('window-all-closed', () => app.quit());
