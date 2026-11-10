@@ -4084,7 +4084,6 @@ async function runPanelAction(action, payload = {}) {
     case 'download-resume': return pauseResumeCancelDownload(payload.id, 'resume');
     case 'download-cancel': return pauseResumeCancelDownload(payload.id, 'cancel');
     case 'download-open': return openDownloadedFile(payload.id, false);
-    case 'scan-download': return scanDownloadedFile(payload.id);
     case 'download-show': return openDownloadedFile(payload.id, true);
     case 'download-clear-completed':
       data.downloads = data.downloads.filter((item) => activeDownloads.has(item.id) || item.state === 'progressing' || item.state === 'paused');
