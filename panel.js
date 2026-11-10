@@ -562,17 +562,8 @@ async function handleClick(event) {
       return;
     }
     if (action === 'apply-theme-preview') {
-      const profileId = (state.themeProfiles || []).find((item) => item.id === state.workspaceThemeProfiles?.[state.activeWorkspaceId])?.id || (state.themeProfiles || []).find((item) => item.name && item.id === state.themePreviewProfileId)?.id;
-      const previewProfile = (state.themeProfiles || []).find((item) => item.id === profileId);
-      if (!previewProfile) {
-        const candidate = (state.themeProfiles || []).find((item) => item.id !== state.workspaceThemeProfiles?.[state.activeWorkspaceId]);
-        if (!candidate) { showToast('No preview profile is available.', true); return; }
-        const result = await api.action('assign-theme-profile', { id: candidate.id, workspaceId: state.activeWorkspaceId });
-        showToast(result?.ok ? 'Theme applied.' : result?.error || 'Could not apply theme.', !result?.ok);
-      } else {
-        const result = await api.action('assign-theme-profile', { id: previewProfile.id, workspaceId: state.activeWorkspaceId });
-        showToast(result?.ok ? 'Theme applied.' : result?.error || 'Could not apply theme.', !result?.ok);
-      }
+      const result = await api.action(action);
+      showToast(result?.ok ? 'Theme applied to this workspace.' : result?.error || 'Could not apply theme.', !result?.ok);
       renderContent(); return;
     }
     if (action === 'cancel-theme-preview') { await api.action(action); showToast('Theme preview cancelled.'); return; }

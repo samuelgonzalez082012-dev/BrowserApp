@@ -952,6 +952,7 @@ function getPublicState() {
     themeProfiles: (data.themeProfiles || []).map((profile) => ({ ...profile })),
     workspaceThemeProfiles: { ...(data.workspaceThemeProfiles || {}) },
     themePreviewActive: Boolean(previewThemeProfileId),
+    themePreviewProfileId: previewThemeProfileId,
     defaultEngine: browserEngineManager.defaultEngineId,
     availableEngines: browserEngineManager.listEngines()
   };
@@ -3813,6 +3814,11 @@ async function runPanelAction(action, payload = {}) {
       previewThemeProfileId = profile.id; sendState(); return { ok: true };
     }
     case 'cancel-theme-preview': previewThemeProfileId = ''; sendState(); return { ok: true };
+    case 'apply-theme-preview': {
+      if (!previewThemeProfileId || !data.themeProfiles.some((item) => item.id === previewThemeProfileId)) return { ok: false, error: 'No valid theme preview is active.' };
+      data.workspaceThemeProfiles ||= {}; data.workspaceThemeProfiles[data.activeWorkspaceId] = previewThemeProfileId;
+      previewThemeProfileId = ''; saveData(); sendState(); return { ok: true };
+    }
     case 'assign-theme-profile': {
       const workspaceId = String(payload.workspaceId || data.activeWorkspaceId);
       const profileId = String(payload.id || '');
