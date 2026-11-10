@@ -19,6 +19,8 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { fileURLToPath, pathToFileURL } = require('node:url');
 const { PasswordVault } = require('./password-vault');
+const { EngineManager } = require('./engine-adapters/engine-manager');
+const { ChromiumEngineAdapter } = require('./engine-adapters/chromium-engine');
 
 const WINDOW_WIDTH = 1360;
 const WINDOW_HEIGHT = 900;
@@ -65,6 +67,9 @@ const ACCENTS = {
 const THEME_PRESETS = ['graphite', 'midnight', 'nord', 'forest', 'sunset', 'paper', 'ocean', 'lavender', 'ember'];
 const DENSITIES = ['compact', 'comfortable', 'spacious'];
 const CORNER_STYLES = ['sharp', 'soft', 'rounded'];
+
+const browserEngineManager = new EngineManager();
+browserEngineManager.register(new ChromiumEngineAdapter(WebContentsView));
 
 const TRACKER_HOSTS = [
   'doubleclick.net',
@@ -666,8 +671,9 @@ function saveSettings() {
 }
 
 function saveData() {
-  data.savedTabs = tabs.filter((tab) => !tab.isPrivate && !isTemporaryContainerTab(tab) && !tab.view.webContents.isDestroyed()).map((tab) => ({
-    url: tab.sleeping ? tab.savedUrl : (tab.isNewTab ? '' : tab.view.webContents.getURL()),
+  data.savedTabs = tabs.filter((tab) => !tab.isPrivate && !isTemporaryContainerTab(tab) && !tab.engineTab.isDestroyed()).map((tab) => ({
+    url: tab.sleeping ? tab.savedUrl : (tab.isNewTab ? '' : tab.engineTab.getURL()),
+    engineId: tab.engineId || browserEngineManager.defaultEngineId,
     workspaceId: tab.workspaceId,
     title: tab.title,
     pinned: tab.pinned,
@@ -705,7 +711,7 @@ function markRuntimeCleanShutdown() {
 function recordHealthEvent(type, tab = null, detail = '') {
   if (!data || !Array.isArray(data.healthEvents)) return;
   const privateTab = Boolean(tab?.isPrivate);
-  const safeUrl = !privateTab && !isTemporaryContainerTab(tab) && tab && !tab.isNewTab ? (tab.sleeping ? tab.savedUrl : (tab.crashUrl || (() => { try { return tab.view.webContents.getURL(); } catch { return ''; } })())) : '';
+  const safeUrl = !privateTab && !isTemporaryContainerTab(tab) && tab && !tab.isNewTab ? (tab.sleeping ? tab.savedUrl : (tab.crashUrl || (() => { try { return tab.engineTab.getURL(); } catch { return ''; } })())) : '';
   let origin = '';
   try { origin = safeUrl ? new URL(safeUrl).origin : ''; } catch {}
   const titles = {
@@ -769,7 +775,7 @@ async function exportHealthReport() {
     memoryKB: Number(item.memory?.workingSetSize) || 0
   }));
   const tabsReport = tabs.filter((tab) => !tab.isPrivate && !isTemporaryContainerTab(tab)).map((tab) => {
-    const contents = tab.view.webContents;
+    const contents = tab.engineTab;
     const url = tab.sleeping ? tab.savedUrl : (tab.crashUrl || (contents.isDestroyed() ? '' : contents.getURL()));
     let origin = '';
     try { origin = url ? new URL(url).origin : ''; } catch {}
@@ -837,17 +843,18 @@ function toPublicDownload(item) {
 function getPublicState() {
   const workspaceTabs = getWorkspaceTabs();
   const active = getActiveTab();
-  const activeUrl = active && !active.view.webContents.isDestroyed() ? active.view.webContents.getURL() : '';
+  const activeUrl = active && !active.engineTab.isDestroyed() ? active.engineTab.getURL() : '';
   const activeOrigin = getOrigin(activeUrl);
   const currentBookmark = activeUrl ? data.bookmarks.find((bookmark) => bookmark.url === activeUrl) : null;
 
   return {
     tabs: workspaceTabs.map((tab) => {
-      const contents = tab.view.webContents;
+      const contents = tab.engineTab;
       const destroyed = contents.isDestroyed();
       const history = destroyed ? null : contents.navigationHistory;
       return {
         id: tab.id,
+        engineId: tab.engineId || browserEngineManager.defaultEngineId,
         title: destroyed ? 'Closed tab' : (tab.title || contents.getTitle() || 'New Tab'),
         url: destroyed || tab.isNewTab ? '' : (tab.sleeping ? tab.savedUrl : contents.getURL()),
         favicon: tab.favicon || '',
@@ -885,7 +892,7 @@ function getPublicState() {
     profile: { id: activeProfileId, name: getCurrentProfile()?.name || 'Profile', icon: getCurrentProfile()?.icon || '👤', color: getCurrentProfile()?.color || '#93a9ff', guest: Boolean(getCurrentProfile()?.guest) },
     profiles: profileRegistry.profiles.map((profile) => ({ id: profile.id, name: profile.name, icon: profile.icon, color: profile.color, guest: Boolean(profile.guest), active: profile.id === activeProfileId })),
     workspaces: data.workspaces.map((workspace) => ({ ...workspace, tabCount: getWorkspaceTabs(workspace.id).length })),
-    allTabs: tabs.filter((tab) => !tab.isPrivate).map((tab) => ({ id: tab.id, title: tab.title, url: tab.sleeping ? tab.savedUrl : (tab.isNewTab ? '' : (tab.crashUrl || (tab.view.webContents.isDestroyed() ? '' : tab.view.webContents.getURL()))), workspaceId: tab.workspaceId, groupId: tab.groupId || null, containerId: tab.containerId || 'default', pinned: Boolean(tab.pinned), audible: !tab.view.webContents.isDestroyed() && tab.view.webContents.isCurrentlyAudible(), sleeping: Boolean(tab.sleeping), crashed: Boolean(tab.crashed), crashPage: Boolean(tab.isCrashPage), recovering: Boolean(tab.recovering), unresponsive: Boolean(tab.unresponsive) })),
+    allTabs: tabs.filter((tab) => !tab.isPrivate).map((tab) => ({ id: tab.id, engineId: tab.engineId || browserEngineManager.defaultEngineId, title: tab.title, url: tab.sleeping ? tab.savedUrl : (tab.isNewTab ? '' : (tab.crashUrl || (tab.engineTab.isDestroyed() ? '' : tab.engineTab.getURL()))), workspaceId: tab.workspaceId, groupId: tab.groupId || null, containerId: tab.containerId || 'default', pinned: Boolean(tab.pinned), audible: !tab.engineTab.isDestroyed() && tab.engineTab.isCurrentlyAudible(), sleeping: Boolean(tab.sleeping), crashed: Boolean(tab.crashed), crashPage: Boolean(tab.isCrashPage), recovering: Boolean(tab.recovering), unresponsive: Boolean(tab.unresponsive) })),
     tabGroups: data.tabGroups,
     containers: (data.tabContainers || []).map((container) => ({ ...container, sessionTemporary: Boolean(container.temporary || activeProfileIsGuest), tabCount: tabs.filter((tab) => !tab.isPrivate && tab.containerId === container.id).length, active: active && !active.isPrivate && active.containerId === container.id })),
     containerRules: data.containerRules || [],
@@ -927,7 +934,9 @@ function getPublicState() {
     activeOrigin,
     permissions: getSitePermissionState(activeOrigin),
     recentlyClosed: recentlyClosed.slice(0, MAX_RECENTLY_CLOSED).map((item) => ({ title: item.title, url: item.url, workspaceId: item.workspaceId, containerId: item.containerId || 'default' })),
-    settings: { ...settings, hasAiKey: Boolean(aiKeyEncrypted) }
+    settings: { ...settings, hasAiKey: Boolean(aiKeyEncrypted) },
+    defaultEngine: browserEngineManager.defaultEngineId,
+    availableEngines: browserEngineManager.listEngines()
   };
 }
 
@@ -944,31 +953,31 @@ function visibleTabIds() {
 
 function syncChildViews() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const root = mainWindow.contentView;
+
   for (const tab of tabs) {
-    try { root.removeChildView(tab.view); } catch { /* The tab may belong to another workspace. */ }
+    try { tab.engineTab.detachFrom(mainWindow); } catch { /* A tab may already be detached. */ }
   }
   if (panelView) {
-    try { root.removeChildView(panelView); } catch { /* The panel may already be detached. */ }
+    try { mainWindow.contentView.removeChildView(panelView); } catch { /* The panel may already be detached. */ }
   }
   if (webPanelView) {
-    try { root.removeChildView(webPanelView); } catch { /* The web panel may already be detached. */ }
+    try { mainWindow.contentView.removeChildView(webPanelView); } catch { /* The web panel may already be detached. */ }
   }
   if (chromeView) {
-    try { root.removeChildView(chromeView); } catch { /* The chrome view may already be detached. */ }
+    try { mainWindow.contentView.removeChildView(chromeView); } catch { /* The chrome view may already be detached. */ }
   }
 
-  for (const tab of getVisibleTabs()) root.addChildView(tab.view);
-  if (webPanelView) root.addChildView(webPanelView);
-  if (panelVisible && panelView) root.addChildView(panelView);
-  if (chromeView) root.addChildView(chromeView);
+  for (const tab of getVisibleTabs()) tab.engineTab.attachTo(mainWindow);
+  if (webPanelView) mainWindow.contentView.addChildView(webPanelView);
+  if (panelVisible && panelView) mainWindow.contentView.addChildView(panelView);
+  if (chromeView) mainWindow.contentView.addChildView(chromeView);
   updateLayout();
 }
 
 function focusTab(tabId = activeTabId) {
   const tab = getTab(tabId);
-  if (!tab || !mainWindow || mainWindow.isDestroyed() || tab.view.webContents.isDestroyed()) return;
-  try { tab.view.webContents.focus(); } catch { /* A page may be navigating or closing. */ }
+  if (!tab || !mainWindow || mainWindow.isDestroyed() || tab.engineTab.isDestroyed()) return;
+  try { tab.engineTab.focus(); } catch { /* A page may be navigating or closing. */ }
 }
 
 function updateLayout() {
@@ -990,33 +999,33 @@ function updateLayout() {
   if (panelVisible) return;
   if (!visible.length) return;
   if (visible.length === 1) {
-    visible[0].view.setBounds({ x: contentX, y: chromeHeight, width: contentWidth, height: bodyHeight });
+    visible[0].engineTab.setBounds({ x: contentX, y: chromeHeight, width: contentWidth, height: bodyHeight });
     return;
   }
   const gutter = 4;
   if (visible.length === 2) {
     const leftWidth = Math.floor((contentWidth - gutter) * splitRatio);
-    visible[0].view.setBounds({ x: contentX, y: chromeHeight, width: leftWidth, height: bodyHeight });
-    visible[1].view.setBounds({ x: contentX + leftWidth + gutter, y: chromeHeight, width: contentWidth - leftWidth - gutter, height: bodyHeight });
+    visible[0].engineTab.setBounds({ x: contentX, y: chromeHeight, width: leftWidth, height: bodyHeight });
+    visible[1].engineTab.setBounds({ x: contentX + leftWidth + gutter, y: chromeHeight, width: contentWidth - leftWidth - gutter, height: bodyHeight });
   } else if (splitLayout === 'columns') {
     const usable = contentWidth - gutter * (visible.length - 1);
     const columnWidth = Math.floor(usable / visible.length);
-    visible.forEach((tab, index) => tab.view.setBounds({ x: contentX + index * (columnWidth + gutter), y: chromeHeight, width: index === visible.length - 1 ? contentWidth - index * (columnWidth + gutter) : columnWidth, height: bodyHeight }));
+    visible.forEach((tab, index) => tab.engineTab.setBounds({ x: contentX + index * (columnWidth + gutter), y: chromeHeight, width: index === visible.length - 1 ? contentWidth - index * (columnWidth + gutter) : columnWidth, height: bodyHeight }));
   } else if (visible.length === 3 || splitLayout === 'focus') {
     const leftWidth = Math.floor((contentWidth - gutter) * 0.56);
     const rightWidth = contentWidth - leftWidth - gutter;
     const countRight = visible.length - 1;
     const slotHeight = Math.floor((bodyHeight - gutter * (countRight - 1)) / countRight);
-    visible[0].view.setBounds({ x: contentX, y: chromeHeight, width: leftWidth, height: bodyHeight });
-    visible.slice(1).forEach((tab, index) => tab.view.setBounds({ x: contentX + leftWidth + gutter, y: chromeHeight + index * (slotHeight + gutter), width: rightWidth, height: index === countRight - 1 ? bodyHeight - index * (slotHeight + gutter) : slotHeight }));
+    visible[0].engineTab.setBounds({ x: contentX, y: chromeHeight, width: leftWidth, height: bodyHeight });
+    visible.slice(1).forEach((tab, index) => tab.engineTab.setBounds({ x: contentX + leftWidth + gutter, y: chromeHeight + index * (slotHeight + gutter), width: rightWidth, height: index === countRight - 1 ? bodyHeight - index * (slotHeight + gutter) : slotHeight }));
   } else {
     const leftWidth = Math.floor((contentWidth - gutter) / 2);
     const rightWidth = contentWidth - leftWidth - gutter;
     const topHeight = Math.floor((bodyHeight - gutter) / 2);
-    visible[0].view.setBounds({ x: contentX, y: chromeHeight, width: leftWidth, height: topHeight });
-    visible[1].view.setBounds({ x: contentX + leftWidth + gutter, y: chromeHeight, width: rightWidth, height: topHeight });
-    visible[2].view.setBounds({ x: contentX, y: chromeHeight + topHeight + gutter, width: leftWidth, height: bodyHeight - topHeight - gutter });
-    visible[3].view.setBounds({ x: contentX + leftWidth + gutter, y: chromeHeight + topHeight + gutter, width: rightWidth, height: bodyHeight - topHeight - gutter });
+    visible[0].engineTab.setBounds({ x: contentX, y: chromeHeight, width: leftWidth, height: topHeight });
+    visible[1].engineTab.setBounds({ x: contentX + leftWidth + gutter, y: chromeHeight, width: rightWidth, height: topHeight });
+    visible[2].engineTab.setBounds({ x: contentX, y: chromeHeight + topHeight + gutter, width: leftWidth, height: bodyHeight - topHeight - gutter });
+    visible[3].engineTab.setBounds({ x: contentX + leftWidth + gutter, y: chromeHeight + topHeight + gutter, width: rightWidth, height: bodyHeight - topHeight - gutter });
   }
 }
 
@@ -1045,11 +1054,11 @@ function setActiveTab(tabId) {
 }
 
 function loadNewTabPage(tab) {
-  if (!tab || tab.view.webContents.isDestroyed()) return;
+  if (!tab || tab.engineTab.isDestroyed()) return;
   tab.isNewTab = true;
   tab.title = 'New Tab';
   tab.favicon = '';
-  tab.view.webContents.loadFile(FILES.newTab, {
+  tab.engineTab.loadInternalFile(FILES.newTab, {
     query: {
       engine: settings.searchEngine, theme: settings.theme, accent: settings.accent, background: settings.newTabBackground, preset: settings.themePreset, density: settings.density, corners: settings.cornerStyle, font: settings.fontFamily, customAccent: settings.customAccent,
       bookmarks: JSON.stringify(data.bookmarks.slice(0, 8).map(({ title, url }) => ({ title, url }))),
@@ -1074,7 +1083,7 @@ function addHistoryEntry(tab, url) {
 }
 
 function navigateTab(tab, input) {
-  if (!tab || tab.view.webContents.isDestroyed()) return;
+  if (!tab || tab.engineTab.isDestroyed()) return;
   if (tab.containerReadyPending) { tab.pendingNavigation = input; return; }
   const target = normalizeAddress(input);
   if (!target) {
@@ -1092,7 +1101,7 @@ function navigateTab(tab, input) {
   tab.isNewTab = false;
   tab.localPdfPath = null;
   tab.favicon = '';
-  tab.view.webContents.loadURL(target).catch((error) => {
+  tab.engineTab.navigate(target).catch((error) => {
     console.warn('Navigation failed:', error.message);
     sendState();
   });
@@ -1128,11 +1137,16 @@ function updateTabContainer(payload = {}) {
   if (/^#[0-9a-f]{6}$/i.test(payload.color || '')) container.color = payload.color;
   saveData(); sendState(); return { ok: true, container };
 }
-function createContainerView(tab, containerId) {
+function createContainerEngineTab(tab, containerId) {
   const sessionInfo = prepareContainerSession(containerId, false);
-  const view = new WebContentsView({ webPreferences: { partition: sessionInfo.partition, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, webviewTag: false, spellcheck: settings.spellcheckEnabled !== false } });
-  return { view, ready: sessionInfo.ready };
+  const engineTab = browserEngineManager.createTab({
+    engineId: tab.engineId || browserEngineManager.defaultEngineId,
+    contextId: sessionInfo.partition,
+    preferences: { spellcheckEnabled: settings.spellcheckEnabled !== false }
+  });
+  return { engineTab, ready: sessionInfo.ready };
 }
+
 function moveTabToContainer(tabId, containerId, urlOverride = null) {
   const tab = getTab(tabId);
   const container = getTabContainer(containerId);
@@ -1140,41 +1154,47 @@ function moveTabToContainer(tabId, containerId, urlOverride = null) {
   if (tab.isPrivate) return { ok: false, error: 'Private tabs cannot be moved into persistent containers.' };
   if (container.id !== String(containerId)) return { ok: false, error: 'Container not found.' };
   if (tab.containerId === container.id) return { ok: true, unchanged: true };
-  const oldContents = tab.view.webContents;
+
+  const previousEngineTab = tab.engineTab;
   let url = typeof urlOverride === 'string' ? urlOverride : '';
-  if (!url && !oldContents.isDestroyed() && !tab.isNewTab && !tab.sleeping && !tab.isCrashPage) url = oldContents.getURL();
+  if (!url && !previousEngineTab.isDestroyed() && !tab.isNewTab && !tab.sleeping && !tab.isCrashPage) url = previousEngineTab.getURL();
   if (tab.sleeping) url = tab.savedUrl || url;
   if (tab.isCrashPage && tab.crashUrl) url = tab.crashUrl;
   const safeUrl = url && isSafeWebUrl(url) ? url : '';
-  const oldView = tab.view;
-  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(oldView); } catch {}
+
+  previousEngineTab.detachFrom(mainWindow);
   tab.containerId = container.id;
   tab.sleeping = false; tab.savedUrl = ''; tab.crashed = false; tab.isCrashPage = false; tab.recovering = false; tab.unresponsive = false; tab.loadError = '';
   tab.isNewTab = !safeUrl;
   tab.title = safeUrl ? 'Loading…' : 'New Tab'; tab.favicon = '';
-  const replacement = createContainerView(tab, container.id);
-  tab.view = replacement.view;
+
+  const replacement = createContainerEngineTab(tab, container.id);
+  tab.engineTab = replacement.engineTab;
+  tab.engineId = replacement.engineTab.engineId;
   tab.containerReadyPending = Boolean(replacement.ready);
   tab.pendingNavigation = safeUrl || null;
   attachTabEvents(tab);
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.addChildView(tab.view);
-  try { if (!oldContents.isDestroyed()) oldContents.close(); } catch {}
+  if (mainWindow && !mainWindow.isDestroyed()) tab.engineTab.attachTo(mainWindow);
+  previousEngineTab.close();
+
   if (!safeUrl) loadNewTabPage(tab);
   replacement.ready.finally(() => {
-    if (!tabs.includes(tab) || tab.view !== replacement.view) return;
+    if (!tabs.includes(tab) || tab.engineTab !== replacement.engineTab) return;
     tab.containerReadyPending = false;
-    const pending = tab.pendingNavigation; tab.pendingNavigation = null;
+    const pending = tab.pendingNavigation;
+    tab.pendingNavigation = null;
     if (pending && isSafeWebUrl(pending)) {
       // This move is an explicit user action or a resolved automatic rule.
       // Load directly once so the same rule cannot immediately move it back.
       tab.isNewTab = false;
       tab.localPdfPath = null;
-      tab.view.webContents.loadURL(pending).catch((error) => { tab.loadError = error.message || 'Could not load page in this container.'; sendState(); });
+      tab.engineTab.navigate(pending).catch((error) => { tab.loadError = error.message || 'Could not load page in this container.'; sendState(); });
     }
   });
   syncChildViews(); saveData(); sendState();
   return { ok: true, container: { id: container.id, name: container.name } };
 }
+
 async function deleteTabContainer(containerId) {
   const container = (data.tabContainers || []).find((item) => item.id === String(containerId));
   if (!container || container.id === 'default') return { ok: false, error: 'The default container cannot be deleted.' };
@@ -1222,22 +1242,16 @@ function createTab(input = null, options = {}) {
   const containerId = isPrivate ? 'default' : resolveContainerForUrl(input && isSafeWebUrl(input) ? input : '', inheritedContainer);
   const id = String(nextTabNumber++);
   const sessionInfo = prepareContainerSession(containerId, Boolean(isPrivate));
-  const { partition } = sessionInfo;
-  const view = new WebContentsView({
-    webPreferences: {
-      partition,
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-      webviewTag: false,
-      spellcheck: true
-    }
+  const engineId = String(options.engineId || browserEngineManager.defaultEngineId).toLowerCase();
+  const engineTab = browserEngineManager.createTab({
+    engineId,
+    contextId: sessionInfo.partition,
+    preferences: { spellcheckEnabled: true }
   });
   const tab = {
     id,
-    view,
+    engineId: engineTab.engineId,
+    engineTab,
     workspaceId,
     containerId,
     containerReadyPending: Boolean(sessionInfo.ready),
@@ -1260,12 +1274,13 @@ function createTab(input = null, options = {}) {
     recoveryAttempts: 0,
     lastCrashAt: 0
   };
+
   attachTabEvents(tab);
   addTabToWorkspace(tab, activate);
   if (input) tab.pendingNavigation = input;
   else loadNewTabPage(tab);
   sessionInfo.ready.finally(() => {
-    if (!tabs.includes(tab) || tab.view !== view) return;
+    if (!tabs.includes(tab) || tab.engineTab !== engineTab) return;
     tab.containerReadyPending = false;
     const pending = tab.pendingNavigation;
     tab.pendingNavigation = null;
@@ -1278,9 +1293,11 @@ function createTab(input = null, options = {}) {
 }
 
 function attachTabEvents(tab) {
-  const contents = tab.view.webContents;
-  contents.on('page-title-updated', (_event, title) => {
-    if (tab.view.webContents !== contents) return;
+  const contents = tab.engineTab;
+  const isCurrent = () => tabs.includes(tab) && tab.engineTab === contents;
+
+  contents.on('title-changed', (title) => {
+    if (!isCurrent()) return;
     tab.title = title || (tab.isNewTab ? 'New Tab' : 'Untitled');
     if (!tab.isPrivate && !isTemporaryContainerTab(tab) && !tab.isNewTab) {
       const url = contents.getURL();
@@ -1289,38 +1306,48 @@ function attachTabEvents(tab) {
     }
     sendState();
   });
-  contents.on('page-favicon-updated', (_event, favicons) => {
-    if (tab.view.webContents !== contents) return;
+  contents.on('favicon-changed', (favicons) => {
+    if (!isCurrent()) return;
     tab.favicon = Array.isArray(favicons) ? (favicons[0] || '') : '';
     sendState();
   });
-  contents.on('did-start-loading', () => { if (tab.view.webContents !== contents) return; tab.loadError = ''; sendState(); });
+  contents.on('loading-started', () => {
+    if (!isCurrent()) return;
+    tab.loadError = '';
+    sendState();
+  });
   contents.on('unresponsive', () => {
-    if (!tabs.includes(tab) || tab.view.webContents !== contents) return;
+    if (!isCurrent()) return;
     tab.unresponsive = true;
     recordHealthEvent('renderer-unresponsive', tab, 'The page renderer stopped responding.');
     sendState();
   });
   contents.on('responsive', () => {
-    if (!tabs.includes(tab) || tab.view.webContents !== contents) return;
+    if (!isCurrent()) return;
     const wasUnresponsive = tab.unresponsive;
     tab.unresponsive = false;
     if (wasUnresponsive) recordHealthEvent('renderer-responsive', tab, 'The page renderer is responding again.');
     sendState();
   });
-  contents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'))) { event.preventDefault(); openDeveloperTools(tab.id); }
-    if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'u') { event.preventDefault(); contents.viewSource(); }
+  contents.on('before-input', (input, cancellation) => {
+    if (input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'))) {
+      cancellation.preventDefault();
+      openDeveloperTools(tab.id);
+    }
+    if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'u') {
+      cancellation.preventDefault();
+      contents.viewSource();
+    }
   });
-  contents.on('did-stop-loading', () => {
-    if (tab.view.webContents !== contents) return;
+  contents.on('loading-stopped', () => {
+    if (!isCurrent()) return;
     if (!tab.sleeping) tab.title = contents.getTitle() || (tab.isNewTab ? 'New Tab' : 'Untitled');
     applySiteSettingsToTab(tab).catch(() => {});
     if (tab.id === activeTabId) focusTab(tab.id);
     sendState();
   });
-  contents.on('did-navigate', (_event, url) => {
-    if (tab.view.webContents !== contents) return;
+  contents.on('navigated', (url) => {
+    if (!isCurrent()) return;
     if (tab.sleeping && isInternalFileUrl(url, FILES.sleeping)) { sendState(); return; }
     tab.isNewTab = isInternalFileUrl(url, FILES.newTab);
     tab.isCrashPage = isInternalFileUrl(url, FILES.crash);
@@ -1336,30 +1363,30 @@ function attachTabEvents(tab) {
     saveData();
     sendState();
   });
-  contents.on('did-navigate-in-page', (_event, url) => {
-    if (tab.view.webContents !== contents) return;
+  contents.on('navigated-in-page', (url) => {
+    if (!isCurrent()) return;
     tab.isNewTab = isInternalFileUrl(url, FILES.newTab);
     sendState();
   });
-  contents.on('did-fail-load', (_event, _code, description, _url, isMainFrame) => {
-    if (tab.view.webContents !== contents) return;
-    if (isMainFrame) {
-      tab.loadError = description || 'Page failed to load';
+  contents.on('load-failed', (details) => {
+    if (!isCurrent()) return;
+    if (details.isMainFrame) {
+      tab.loadError = details.description || 'Page failed to load';
       sendState();
     }
   });
-  contents.on('did-finish-load', () => {
-    if (!tabs.includes(tab) || tab.view.webContents !== contents || tab.isCrashPage) return;
+  contents.on('loaded', () => {
+    if (!isCurrent() || tab.isCrashPage) return;
     const didRecover = Boolean(tab.recovering || tab.crashed);
     tab.crashed = false; tab.recovering = false; tab.unresponsive = false; tab.crashUrl = ''; tab.crashReason = ''; tab.recoveryAttempts = 0;
     if (didRecover) recordHealthEvent('renderer-recovered', tab, 'The page loaded successfully after an automatic recovery attempt.');
     sendState();
   });
-  contents.on('media-started-playing', sendState);
+  contents.on('media-started', sendState);
   contents.on('media-paused', sendState);
-  contents.on('will-navigate', (event, url) => {
+  contents.on('before-navigate', (url, cancellation) => {
     if (tab.isNewTab && url.startsWith('minimal-browser://workspace/')) {
-      event.preventDefault();
+      cancellation.preventDefault();
       try {
         const workspaceId = decodeURIComponent(url.slice('minimal-browser://workspace/'.length).split(/[?#]/)[0]);
         switchWorkspace(workspaceId);
@@ -1367,7 +1394,7 @@ function attachTabEvents(tab) {
       return;
     }
     if (tab.isNewTab && url.startsWith('minimal-browser://session/')) {
-      event.preventDefault();
+      cancellation.preventDefault();
       try {
         const sessionId = decodeURIComponent(url.slice('minimal-browser://session/'.length).split(/[?#]/)[0]);
         const result = restoreSavedSession(sessionId);
@@ -1377,33 +1404,42 @@ function attachTabEvents(tab) {
     }
     if (!tab.isPrivate && isSafeWebUrl(url)) {
       const assignedContainer = resolveContainerForUrl(url, tab.containerId || 'default');
-      if (assignedContainer !== (tab.containerId || 'default')) { event.preventDefault(); moveTabToContainer(tab.id, assignedContainer, url); return; }
+      if (assignedContainer !== (tab.containerId || 'default')) {
+        cancellation.preventDefault();
+        moveTabToContainer(tab.id, assignedContainer, url);
+        return;
+      }
     }
-    if (!isSafeWebUrl(url) && !isInternalFileUrl(url, FILES.newTab) && !isInternalFileUrl(url, FILES.sleeping) && !isInternalFileUrl(url, FILES.crash) && !(tab.localPdfPath && url === pathToFileURL(tab.localPdfPath).href)) event.preventDefault();
+    if (!isSafeWebUrl(url) && !isInternalFileUrl(url, FILES.newTab) && !isInternalFileUrl(url, FILES.sleeping) && !isInternalFileUrl(url, FILES.crash) && !(tab.localPdfPath && url === pathToFileURL(tab.localPdfPath).href)) {
+      cancellation.preventDefault();
+    }
   });
-  contents.on('will-redirect', (event, url) => {
-    if (!isSafeWebUrl(url) && !isInternalFileUrl(url, FILES.newTab) && !isInternalFileUrl(url, FILES.sleeping) && !isInternalFileUrl(url, FILES.crash) && !(tab.localPdfPath && url === pathToFileURL(tab.localPdfPath).href)) event.preventDefault();
+  contents.on('before-redirect', (url, cancellation) => {
+    if (!isSafeWebUrl(url) && !isInternalFileUrl(url, FILES.newTab) && !isInternalFileUrl(url, FILES.sleeping) && !isInternalFileUrl(url, FILES.crash) && !(tab.localPdfPath && url === pathToFileURL(tab.localPdfPath).href)) {
+      cancellation.preventDefault();
+    }
   });
-  contents.setWindowOpenHandler(({ url }) => {
+  contents.setPopupHandler(({ url }) => {
     const sourceOrigin = getOrigin(contents.getURL());
-    if (data.siteSettings[sourceOrigin]?.popupPolicy === 'block') return { action: 'deny' };
-    if (isSafeWebUrl(url)) createTab(url, { activate: true, workspaceId: tab.workspaceId, isPrivate: tab.isPrivate, containerId: tab.containerId || 'default' });
-    return { action: 'deny' };
+    if (data.siteSettings[sourceOrigin]?.popupPolicy === 'block') return false;
+    if (isSafeWebUrl(url)) createTab(url, { activate: true, workspaceId: tab.workspaceId, isPrivate: tab.isPrivate, containerId: tab.containerId || 'default', engineId: tab.engineId });
+    return false;
   });
-  contents.on('context-menu', (_event, params) => {
+  contents.on('context-menu', (params) => {
     if (!params.selectionText) return;
     const { Menu, MenuItem } = require('electron');
     const menu = new Menu();
     menu.append(new MenuItem({ label: 'Translate selection', click: () => {
       const target = settings.translationTarget || 'en';
       const translated = `https://translate.google.com/?sl=auto&tl=${encodeURIComponent(target)}&text=${encodeURIComponent(params.selectionText)}&op=translate`;
-      createTab(translated, { activate: true, workspaceId: tab.workspaceId, isPrivate: tab.isPrivate, containerId: tab.containerId || 'default' });
+      createTab(translated, { activate: true, workspaceId: tab.workspaceId, isPrivate: tab.isPrivate, containerId: tab.containerId || 'default', engineId: tab.engineId });
     }}));
     menu.append(new MenuItem({ type: 'separator' }));
     menu.append(new MenuItem({ label: 'Inspect', click: () => openDeveloperTools(tab.id) }));
     menu.popup();
   });
   contents.on('dom-ready', () => {
+    if (!isCurrent()) return;
     if (settings.highContrastMode || settings.reducedMotion || settings.pageTextScale !== 100) {
       const css = `${settings.highContrastMode ? 'html{filter:contrast(1.22)!important} body{background:#fff!important;color:#111!important}' : ''}${settings.reducedMotion ? '*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}' : ''}${settings.pageTextScale !== 100 ? `html{font-size:${settings.pageTextScale}%!important}` : ''}`;
       contents.insertCSS(css, { cssOrigin: 'user' }).catch(() => {});
@@ -1412,9 +1448,9 @@ function attachTabEvents(tab) {
       contents.executeJavaScript(`(() => { const selectors = ['[id*=cookie i][role=dialog]', '[class*=cookie-banner i]', '[class*=cookie-consent i]', '[aria-label*=cookie i]']; for (const selector of selectors) { for (const node of document.querySelectorAll(selector)) { if (node.getBoundingClientRect().height < 500) node.style.setProperty('display', 'none', 'important'); } } })();`).catch(() => {});
     }
   });
-  contents.on('did-stop-loading', () => applySiteSettingsToTab(tab).catch(() => {}));
-  contents.on('render-process-gone', (_event, details = {}) => {
-    if (!tabs.includes(tab) || tab.view.webContents !== contents) return;
+  contents.on('loading-stopped', () => applySiteSettingsToTab(tab).catch(() => {}));
+  contents.on('crashed', (details = {}) => {
+    if (!isCurrent()) return;
     const now = Date.now();
     const originalUrl = tab.sleeping ? tab.savedUrl : (tab.isNewTab ? '' : (tab.isCrashPage ? tab.crashUrl : (() => { try { return contents.getURL(); } catch { return ''; } })()));
     tab.crashed = true; tab.unresponsive = false; tab.recovering = false; tab.isCrashPage = false;
@@ -1448,7 +1484,7 @@ function attachTabEvents(tab) {
 }
 
 function showCrashPage(tab, reason = '') {
-  if (!tab || !tabs.includes(tab) || tab.view.webContents.isDestroyed()) return;
+  if (!tab || !tabs.includes(tab) || tab.engineTab.isDestroyed()) return;
   const crashedTitle = String(tab.crashPageTitle || tab.title || 'Untitled page').slice(0, 180);
   tab.crashed = true;
   tab.recovering = false;
@@ -1456,7 +1492,7 @@ function showCrashPage(tab, reason = '') {
   tab.isCrashPage = true;
   tab.title = 'Page crashed';
   const url = tab.crashUrl || '';
-  tab.view.webContents.loadFile(FILES.crash, {
+  tab.engineTab.loadInternalFile(FILES.crash, {
     query: { title: crashedTitle, url, reason: String(reason || tab.crashReason || 'The webpage renderer stopped unexpectedly.').slice(0, 180) }
   }).catch((error) => console.warn('Could not display crash recovery page:', error.message));
   sendState();
@@ -1477,17 +1513,17 @@ function closeTab(tabId, options = {}) {
   const oldIndex = tabs.findIndex((item) => item.id === tab.id);
   const wasActive = activeTabId === tab.id;
   const wasSplit = splitTabIds.includes(tab.id);
-  const url = !tab.isNewTab && !tab.view.webContents.isDestroyed() ? tab.view.webContents.getURL() : '';
+  const url = !tab.isNewTab && !tab.engineTab.isDestroyed() ? tab.engineTab.getURL() : '';
 
   if (!tab.isPrivate && !isTemporaryContainerTab(tab) && isSafeWebUrl(url) && options.remember !== false) {
-    recentlyClosed.unshift({ url, title: tab.title, workspaceId: tab.workspaceId, pinned: tab.pinned, containerId: tab.containerId || 'default' });
+    recentlyClosed.unshift({ url, title: tab.title, workspaceId: tab.workspaceId, pinned: tab.pinned, containerId: tab.containerId || 'default', engineId: tab.engineId || browserEngineManager.defaultEngineId });
     recentlyClosed.splice(MAX_RECENTLY_CLOSED);
   }
   tabs.splice(oldIndex, 1);
   if (mainWindow && !mainWindow.isDestroyed()) {
-    try { mainWindow.contentView.removeChildView(tab.view); } catch { /* The tab may not be attached. */ }
+    try { tab.engineTab.detachFrom(mainWindow); } catch { /* The tab may not be attached. */ }
   }
-  if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
+  if (!tab.engineTab.isDestroyed()) tab.engineTab.close();
   const closedTransientTab = Boolean(tab.isPrivate || isTemporaryContainerTab(tab));
   const hasAnyTransientTabs = tabs.some((item) => item.isPrivate || isTemporaryContainerTab(item));
   if (closedTransientTab && !hasAnyTransientTabs) {
@@ -1528,15 +1564,15 @@ function reorderTabs(sourceId, targetId) {
 
 function duplicateTab(tabId) {
   const tab = getTab(tabId);
-  if (!tab || tab.view.webContents.isDestroyed()) return;
-  const url = tab.isNewTab ? null : tab.view.webContents.getURL();
-  createTab(url, { activate: true, workspaceId: tab.workspaceId, isPrivate: tab.isPrivate, pinned: false, containerId: tab.containerId || 'default' });
+  if (!tab || tab.engineTab.isDestroyed()) return;
+  const url = tab.isNewTab ? null : tab.engineTab.getURL();
+  createTab(url, { activate: true, workspaceId: tab.workspaceId, isPrivate: tab.isPrivate, pinned: false, containerId: tab.containerId || 'default', engineId: tab.engineId || browserEngineManager.defaultEngineId });
 }
 
 function runOnActiveTab(action) {
   const tab = getActiveTab();
-  if (!tab || tab.view.webContents.isDestroyed()) return;
-  const contents = tab.view.webContents;
+  if (!tab || tab.engineTab.isDestroyed()) return;
+  const contents = tab.engineTab;
   const history = contents.navigationHistory;
   if (action === 'back' && history.canGoBack()) history.goBack();
   if (action === 'forward' && history.canGoForward()) history.goForward();
@@ -1601,16 +1637,16 @@ function deleteWorkspace(workspaceId) {
 
 function currentBookmark() {
   const tab = getActiveTab();
-  if (!tab || tab.isNewTab || tab.isPrivate || tab.view.webContents.isDestroyed()) return null;
-  const url = tab.view.webContents.getURL();
+  if (!tab || tab.isNewTab || tab.isPrivate || tab.engineTab.isDestroyed()) return null;
+  const url = tab.engineTab.getURL();
   if (!isSafeWebUrl(url)) return null;
   return data.bookmarks.find((bookmark) => bookmark.url === url) || null;
 }
 
 function toggleBookmark() {
   const tab = getActiveTab();
-  if (!tab || tab.isPrivate || tab.isNewTab || tab.view.webContents.isDestroyed()) return;
-  const url = tab.view.webContents.getURL();
+  if (!tab || tab.isPrivate || tab.isNewTab || tab.engineTab.isDestroyed()) return;
+  const url = tab.engineTab.getURL();
   const existing = data.bookmarks.find((bookmark) => bookmark.url === url);
   if (existing) data.bookmarks = data.bookmarks.filter((bookmark) => bookmark.id !== existing.id);
   else data.bookmarks.unshift({ id: makeId('bookmark'), url, title: tab.title || url, createdAt: Date.now() });
@@ -1646,7 +1682,7 @@ function addDownload(item, sourceWebContents) {
     }
   }
 
-  const sourceTab = tabs.find((tab) => !tab.view.webContents.isDestroyed() && tab.view.webContents.id === sourceWebContents?.id);
+  const sourceTab = tabs.find((tab) => !tab.engineTab.isDestroyed() && tab.engineTab.id === sourceWebContents?.id);
   const isPrivateDownload = Boolean(sourceTab?.isPrivate || isTemporaryContainerTab(sourceTab));
   const record = {
     id,
@@ -1719,7 +1755,7 @@ function isTemporaryContainerTab(tab) {
 function isTransientRequest(details) {
   const webContentsId = Number(details?.webContentsId ?? details?.webContents?.id);
   if (!Number.isFinite(webContentsId) || webContentsId <= 0) return activeProfileIsGuest;
-  const sourceTab = tabs.find((tab) => !tab.view.webContents.isDestroyed() && tab.view.webContents.id === webContentsId);
+  const sourceTab = tabs.find((tab) => !tab.engineTab.isDestroyed() && tab.engineTab.id === webContentsId);
   return Boolean(sourceTab && (sourceTab.isPrivate || isTemporaryContainerTab(sourceTab)));
 }
 function isOriginWhitelisted(origin) { return Boolean(origin && data.adblockWhitelist.includes(origin)); }
@@ -1949,28 +1985,30 @@ async function updateAdblockFilters() {
 
 function getSiteSettings(origin) { return origin ? { ...(data.siteSettings[origin] || {}) } : {}; }
 async function applySiteSettingsToTab(tab) {
-  if (!tab || tab.isNewTab || tab.isPrivate || tab.view.webContents.isDestroyed()) return;
-  const origin = getOrigin(tab.view.webContents.getURL()); const site = getSiteSettings(origin);
-  try { tab.view.webContents.setZoomFactor(Number(site.zoomFactor) || 1); } catch {}
-  const debug = tab.view.webContents.debugger;
+  if (!tab || tab.isNewTab || tab.isPrivate || tab.engineTab.isDestroyed()) return;
+  const origin = getOrigin(tab.engineTab.getURL());
+  const site = getSiteSettings(origin);
+  try { tab.engineTab.setZoomFactor(Number(site.zoomFactor) || 1); } catch {}
   try {
     if (site.javascriptDisabled) {
-      if (!debug.isAttached()) debug.attach('1.3');
-      await debug.sendCommand('Emulation.setScriptExecutionDisabled', { value: true }); tab.scriptDebuggerAttached = true;
-    } else if (tab.scriptDebuggerAttached && debug.isAttached()) {
-      await debug.sendCommand('Emulation.setScriptExecutionDisabled', { value: false }); debug.detach(); tab.scriptDebuggerAttached = false;
+      await tab.engineTab.setJavaScriptEnabled(false);
+      tab.scriptDebuggerAttached = true;
+    } else if (tab.scriptDebuggerAttached) {
+      await tab.engineTab.setJavaScriptEnabled(true);
+      tab.scriptDebuggerAttached = false;
     }
   } catch (error) { console.warn('Could not apply JavaScript setting:', error.message); }
 }
+
 function setSiteZoom(origin, factor) {
   const safeOrigin = getOrigin(origin); const zoom = Number(factor);
   if (!safeOrigin || !Number.isFinite(zoom) || zoom < 0.5 || zoom > 2) return { ok: false, error: 'Zoom must be between 50% and 200%.' };
   data.siteSettings[safeOrigin] ||= {}; data.siteSettings[safeOrigin].zoomFactor = zoom;
-  const tab = getActiveTab(); if (tab && getOrigin(tab.view.webContents.getURL()) === safeOrigin) tab.view.webContents.setZoomFactor(zoom);
+  const tab = getActiveTab(); if (tab && getOrigin(tab.engineTab.getURL()) === safeOrigin) tab.engineTab.setZoomFactor(zoom);
   saveData(); sendState(); return { ok: true };
 }
 async function listSiteCookies() {
-  const tab = getActiveTab(); const origin = getOrigin(tab?.view.webContents.getURL() || '');
+  const tab = getActiveTab(); const origin = getOrigin(tab?.engineTab.getURL() || '');
   if (!origin) return { ok: false, error: 'Open a website first.' };
   const browserSession = getBrowserSessionForTab(tab);
   const cookies = await browserSession.cookies.get({ url: origin });
@@ -1984,8 +2022,8 @@ async function clearCookie(origin, name) {
   await browserSession.cookies.remove(`${safeOrigin}${cookie.path || '/'}`, cookie.name); return { ok: true };
 }
 function openDeveloperTools(tabId = activeTabId) {
-  const tab = getTab(tabId); if (!tab || tab.view.webContents.isDestroyed()) return { ok: false, error: 'No active page.' };
-  try { if (tab.scriptDebuggerAttached && tab.view.webContents.debugger.isAttached()) { tab.view.webContents.debugger.detach(); tab.scriptDebuggerAttached = false; } tab.view.webContents.openDevTools({ mode: 'detach' }); return { ok: true }; }
+  const tab = getTab(tabId); if (!tab || tab.engineTab.isDestroyed()) return { ok: false, error: 'No active page.' };
+  try { tab.engineTab.openDevTools(); tab.scriptDebuggerAttached = false; return { ok: true }; }
   catch (error) { return { ok: false, error: error.message }; }
 }
 function createProfile(name, icon = '👤', color = '#93a9ff') {
@@ -2310,7 +2348,7 @@ function setSitePermission(origin, permission, allowed, expiryHours = 0) {
 }
 
 async function clearCurrentSiteData() {
-  const origin = getOrigin(getActiveTab()?.view.webContents.getURL() || '');
+  const origin = getOrigin(getActiveTab()?.engineTab.getURL() || '');
   if (!origin) return { ok: false, error: 'There is no active website.' };
   const activeTab = getActiveTab();
   const browserSession = getBrowserSessionForTab(activeTab);
@@ -2416,12 +2454,12 @@ function generateSecurePassword(payload = {}) {
 
 async function fillVaultCredential(id) {
   const tab = getActiveTab();
-  if (!tab || tab.isPrivate || tab.isNewTab || tab.sleeping || tab.view.webContents.isDestroyed()) return { ok: false, error: 'Open a normal, loaded website tab first.' };
+  if (!tab || tab.isPrivate || tab.isNewTab || tab.sleeping || tab.engineTab.isDestroyed()) return { ok: false, error: 'Open a normal, loaded website tab first.' };
   let entry;
   try { vaultLastUsedAt = Date.now(); entry = passwordVault.reveal(id); } catch (error) { return { ok: false, error: error.message }; }
   if (entry.type !== 'credential') return { ok: false, error: 'Only website login entries can be filled.' };
   let currentOrigin = '';
-  try { currentOrigin = `${new URL(tab.view.webContents.getURL()).origin}/`; } catch {}
+  try { currentOrigin = `${new URL(tab.engineTab.getURL()).origin}/`; } catch {}
   const savedOrigin = String(entry.site || '');
   if (!currentOrigin || currentOrigin !== savedOrigin) return { ok: false, error: 'This login is saved for a different website origin. Open the exact saved HTTPS origin before filling it.' };
   const confirmation = await dialog.showMessageBox(mainWindow, {
@@ -2434,13 +2472,13 @@ async function fillVaultCredential(id) {
   // Re-check after the native prompt so a navigation during the prompt cannot
   // send credentials to a different origin.
   let originAfterPrompt = '';
-  try { originAfterPrompt = `${new URL(tab.view.webContents.getURL()).origin}/`; } catch {}
-  if (originAfterPrompt !== savedOrigin || tab.id !== activeTabId || tab.isPrivate || tab.view.webContents.isDestroyed()) {
+  try { originAfterPrompt = `${new URL(tab.engineTab.getURL()).origin}/`; } catch {}
+  if (originAfterPrompt !== savedOrigin || tab.id !== activeTabId || tab.isPrivate || tab.engineTab.isDestroyed()) {
     return { ok: false, error: 'The active page changed before filling. Reopen the saved website and try again.' };
   }
   const credentials = JSON.stringify({ username: entry.username || '', password: entry.password || '' });
   try {
-    const result = await tab.view.webContents.executeJavaScript(`(() => {
+    const result = await tab.engineTab.executeJavaScript(`(() => {
       const credentials = ${credentials};
       const passwordInput = document.querySelector('input[type="password"]');
       if (!passwordInput) return { ok: false, message: 'No password field was found on this page.' };
@@ -2561,12 +2599,12 @@ async function loadExtensionCatalog() {
 }
 
 async function compareWorkspaceTabs(question = '') {
-  const candidates = getWorkspaceTabs(data.activeWorkspaceId).filter((tab) => !tab.isPrivate && !tab.isNewTab && !tab.sleeping && !tab.view.webContents.isDestroyed()).slice(0, 5);
+  const candidates = getWorkspaceTabs(data.activeWorkspaceId).filter((tab) => !tab.isPrivate && !tab.isNewTab && !tab.sleeping && !tab.engineTab.isDestroyed()).slice(0, 5);
   if (candidates.length < 2) return { ok: false, error: 'Open at least two loaded tabs in this workspace to compare them.' };
   const pages = [];
   for (const tab of candidates) {
     try {
-      const page = await tab.view.webContents.executeJavaScript(`(() => ({ title: document.title || '', url: location.href, text: (document.body?.innerText || '').slice(0, 4500) }))()`, true);
+      const page = await tab.engineTab.executeJavaScript(`(() => ({ title: document.title || '', url: location.href, text: (document.body?.innerText || '').slice(0, 4500) }))()`, true);
       pages.push(page);
     } catch (error) { pages.push({ title: tab.title || 'Page', url: tab.savedUrl || '', text: `Could not read this page: ${error.message}` }); }
   }
@@ -2575,10 +2613,10 @@ async function compareWorkspaceTabs(question = '') {
 
 function getPageContext() {
   const tab = getActiveTab();
-  if (!tab || tab.isPrivate || tab.isNewTab || tab.view.webContents.isDestroyed()) {
+  if (!tab || tab.isPrivate || tab.isNewTab || tab.engineTab.isDestroyed()) {
     return Promise.resolve({ ok: false, error: 'Open a normal website tab before asking the assistant about a page.' });
   }
-  return tab.view.webContents.executeJavaScript(`(() => ({ title: document.title || '', url: location.href, text: (document.body?.innerText || '').slice(0, 14000) }))()`, true)
+  return tab.engineTab.executeJavaScript(`(() => ({ title: document.title || '', url: location.href, text: (document.body?.innerText || '').slice(0, 14000) }))()`, true)
     .then((page) => ({ ok: true, page }))
     .catch((error) => ({ ok: false, error: `Could not read this page: ${error.message}` }));
 }
@@ -2828,7 +2866,7 @@ function openSettingsWindow() {
 function performTabAction(tabId, action) {
   const tab = getTab(tabId);
   if (!tab) return;
-  const contents = tab.view.webContents;
+  const contents = tab.engineTab;
   if (action === 'pin') {
     tab.pinned = !tab.pinned;
     movePinnedTabsFirst(tab.workspaceId);
@@ -2867,7 +2905,8 @@ function restoreSessionTabs() {
       workspaceId: savedTab.workspaceId,
       pinned: Boolean(savedTab.pinned),
       groupId: savedTab.groupId || null,
-      containerId: getTabContainer(savedTab.containerId || 'default').id
+      containerId: getTabContainer(savedTab.containerId || 'default').id,
+      engineId: savedTab.engineId || browserEngineManager.defaultEngineId
     });
   }
   const activeWorkspaceTabs = getWorkspaceTabs(data.activeWorkspaceId);
@@ -2978,7 +3017,7 @@ function saveCurrentSession(name) {
   // can save a named session, but temporary container URLs must not be copied
   // into persistent profile data as a side effect.
   const workspaceTabs = getWorkspaceTabs(workspaceId).filter((tab) => !tab.isPrivate && !isTemporaryContainerTab(tab));
-  const sessionTabs = workspaceTabs.map((tab) => ({ url: tab.sleeping ? tab.savedUrl : (tab.isNewTab ? '' : tab.view.webContents.getURL()), title: tab.title, pinned: Boolean(tab.pinned), groupId: tab.groupId || null, containerId: tab.containerId || 'default' }));
+  const sessionTabs = workspaceTabs.map((tab) => ({ url: tab.sleeping ? tab.savedUrl : (tab.isNewTab ? '' : tab.engineTab.getURL()), title: tab.title, pinned: Boolean(tab.pinned), groupId: tab.groupId || null, containerId: tab.containerId || 'default', engineId: tab.engineId || browserEngineManager.defaultEngineId }));
   if (!sessionTabs.length) return { ok: false, error: 'There are no persistent normal tabs to save.' };
   const activeIndex = Math.max(0, workspaceTabs.findIndex((tab) => tab.id === activeTabId));
   const entry = { id: makeId('session'), name: cleanName, workspaceId, workspaceName: getCurrentWorkspace()?.name || 'Workspace', tabs: sessionTabs, activeIndex, savedAt: Date.now() };
@@ -2992,7 +3031,7 @@ function restoreSavedSession(sessionId) {
   if (!workspace) return { ok: false, error: 'Workspace not found.' };
   for (const tab of getWorkspaceTabs(workspace.id).slice()) closeTab(tab.id, { remember: false, suppressReplacement: true });
   data.activeWorkspaceId = workspace.id;
-  entry.tabs.forEach((tab, index) => createTab(isSafeWebUrl(tab.url) ? tab.url : null, { activate: false, workspaceId: workspace.id, pinned: Boolean(tab.pinned), groupId: tab.groupId || null, containerId: getTabContainer(tab.containerId || 'default').id }));
+  entry.tabs.forEach((tab, index) => createTab(isSafeWebUrl(tab.url) ? tab.url : null, { activate: false, workspaceId: workspace.id, pinned: Boolean(tab.pinned), groupId: tab.groupId || null, containerId: getTabContainer(tab.containerId || 'default').id, engineId: tab.engineId || browserEngineManager.defaultEngineId }));
   const restored = getWorkspaceTabs(workspace.id);
   if (restored.length) setActiveTab(restored[Math.min(entry.activeIndex || 0, restored.length - 1)].id);
   saveData(); sendState(); return { ok: true };
@@ -3001,14 +3040,14 @@ function restoreSavedSession(sessionId) {
 function sleepTab(tabId) {
   const tab = getTab(tabId);
   if (!tab || tab.isPrivate || tab.pinned || tab.id === activeTabId || splitTabIds.includes(tab.id) || tab.isNewTab || tab.sleeping) return { ok: false, error: 'This tab cannot be put to sleep right now.' };
-  const contents = tab.view.webContents;
+  const contents = tab.engineTab;
   if (contents.isCurrentlyAudible()) return { ok: false, error: 'A tab playing audio cannot be put to sleep.' };
   const url = contents.getURL();
   if (!isSafeWebUrl(url)) return { ok: false, error: 'This page cannot be put to sleep.' };
   tab.savedUrl = url;
   tab.sleeping = true;
   tab.title = tab.title || 'Sleeping tab';
-  contents.loadFile(FILES.sleeping, { query: { title: tab.title, url } }).catch(() => {});
+  contents.loadInternalFile(FILES.sleeping, { query: { title: tab.title, url } }).catch(() => {});
   sendState(); saveData();
   return { ok: true };
 }
@@ -3029,7 +3068,7 @@ async function getPerformanceSnapshot() {
   const memoryByProcess = new Map();
 
   for (const tab of tabs.filter((item) => !item.isPrivate)) {
-    const contents = tab.view.webContents;
+    const contents = tab.engineTab;
     let processId = 0;
     try { if (!contents.isDestroyed()) processId = contents.getOSProcessId(); } catch {}
     const processMetric = processByPid.get(processId) || null;
@@ -3050,7 +3089,7 @@ async function getPerformanceSnapshot() {
       crashed: Boolean(tab.crashed), crashPage: Boolean(tab.isCrashPage), recovering: Boolean(tab.recovering),
       unresponsive: Boolean(tab.unresponsive), crashReason: tab.crashReason || '',
       memoryKB, cpuPercent: Number(processMetric?.cpuPercent) || 0, processId,
-      processType: processMetric?.type || 'Unavailable', processShared: processId ? tabs.filter((item) => !item.isPrivate && !item.view.webContents.isDestroyed() && (() => { try { return item.view.webContents.getOSProcessId() === processId; } catch { return false; } })()).length > 1 : false
+      processType: processMetric?.type || 'Unavailable', processShared: processId ? tabs.filter((item) => !item.isPrivate && !item.engineTab.isDestroyed() && (() => { try { return item.engineTab.getOSProcessId() === processId; } catch { return false; } })()).length > 1 : false
     });
   }
 
@@ -3091,7 +3130,7 @@ async function openReaderView() {
   const tab = getActiveTab();
   if (!tab || tab.isNewTab || tab.isPrivate || tab.sleeping) return { ok: false, error: 'Open a normal webpage first.' };
   try {
-    const page = await tab.view.webContents.executeJavaScript(`({title: document.title, url: location.href, text: (document.querySelector('article') || document.querySelector('main') || document.body)?.innerText || ''})`);
+    const page = await tab.engineTab.executeJavaScript(`({title: document.title, url: location.href, text: (document.querySelector('article') || document.querySelector('main') || document.body)?.innerText || ''})`);
     const text = String(page.text || '').trim().slice(0, 100000);
     if (!text) return { ok: false, error: 'No readable text was found on this page.' };
     const reader = new BrowserWindow({ width: 900, height: 800, minWidth: 560, minHeight: 480, title: `Reader — ${page.title || 'Article'}`, backgroundColor: '#f7f5ef', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
@@ -3105,7 +3144,7 @@ async function captureActivePage() {
   const tab = getActiveTab();
   if (!tab || tab.isNewTab || tab.isPrivate || tab.sleeping) return { ok: false, error: 'Open a normal webpage before capturing it.' };
   try {
-    const image = await tab.view.webContents.capturePage();
+    const image = await tab.engineTab.capturePage();
     const result = await dialog.showSaveDialog(mainWindow, { title: 'Save webpage capture', defaultPath: path.join(app.getPath('pictures'), `browser-capture-${Date.now()}.png`), filters: [{ name: 'PNG image', extensions: ['png'] }] });
     if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
     fs.writeFileSync(result.filePath, image.toPNG());
@@ -3113,7 +3152,7 @@ async function captureActivePage() {
     const editor = new BrowserWindow({ width: 1100, height: 820, minWidth: 560, minHeight: 420, title: 'Annotate screenshot', backgroundColor: '#17191f', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
     editor.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     editor.loadFile(FILES.captureEditor, { query: { image: pathToFileURL(result.filePath).href, filename: path.basename(result.filePath) } });
-    addBrowserNotification('Screenshot saved', 'The page capture was saved and copied to the clipboard.', tab.view.webContents.getURL());
+    addBrowserNotification('Screenshot saved', 'The page capture was saved and copied to the clipboard.', tab.engineTab.getURL());
     return { ok: true, path: result.filePath };
   } catch (error) { return { ok: false, error: `Capture failed: ${error.message}` }; }
 }
@@ -3124,9 +3163,9 @@ async function exportActivePdf() {
   try {
     const result = await dialog.showSaveDialog(mainWindow, { title: 'Save webpage as PDF', defaultPath: path.join(app.getPath('documents'), `${(tab.title || 'webpage').replace(/[\\/:*?"<>|]/g, '-').slice(0, 70)}.pdf`), filters: [{ name: 'PDF document', extensions: ['pdf'] }] });
     if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
-    const pdf = await tab.view.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 } });
+    const pdf = await tab.engineTab.printToPDF({ printBackground: true, preferCSSPageSize: true, margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 } });
     fs.writeFileSync(result.filePath, pdf);
-    addBrowserNotification('PDF exported', 'The current webpage was saved as a PDF.', tab.view.webContents.getURL());
+    addBrowserNotification('PDF exported', 'The current webpage was saved as a PDF.', tab.engineTab.getURL());
     return { ok: true, path: result.filePath };
   } catch (error) { return { ok: false, error: `PDF export failed: ${error.message}` }; }
 }
@@ -3134,7 +3173,7 @@ async function exportActivePdf() {
 function openMiniWindow() {
   const tab = getActiveTab();
   if (!tab || tab.isNewTab || tab.isPrivate || tab.sleeping) return { ok: false, error: 'Open a normal webpage first.' };
-  const url = tab.view.webContents.getURL();
+  const url = tab.engineTab.getURL();
   if (!isSafeWebUrl(url)) return { ok: false, error: 'This page cannot be opened in a mini window.' };
   const mini = new BrowserWindow({ width: 520, height: 420, minWidth: 320, minHeight: 240, title: `Mini — ${tab.title}`, alwaysOnTop: true, backgroundColor: '#17191f', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } });
   mini.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -3254,7 +3293,7 @@ async function importBrowserBackup() {
 async function translateActivePage() {
   const tab = getActiveTab();
   if (!tab || tab.isNewTab || tab.isPrivate) return { ok: false, error: 'Open a normal webpage first.' };
-  const url = tab.view.webContents.getURL();
+  const url = tab.engineTab.getURL();
   const target = /^[a-z]{2,3}(-[A-Z]{2})?$/.test(settings.translationTarget || 'en') ? settings.translationTarget : 'en';
   const template = validateTranslationTemplate(settings.translationPageTemplate, 'page') || DEFAULT_SETTINGS.translationPageTemplate;
   const translatedUrl = template.replaceAll('{target}', encodeURIComponent(target)).replaceAll('{url}', encodeURIComponent(url));
@@ -3264,9 +3303,9 @@ async function translateActivePage() {
 
 async function translateSelectedText() {
   const tab = getActiveTab();
-  if (!tab || tab.isPrivate || tab.isNewTab || tab.sleeping || tab.view.webContents.isDestroyed()) return { ok: false, error: 'Select text on a normal, loaded webpage first.' };
+  if (!tab || tab.isPrivate || tab.isNewTab || tab.sleeping || tab.engineTab.isDestroyed()) return { ok: false, error: 'Select text on a normal, loaded webpage first.' };
   try {
-    const selected = String(await tab.view.webContents.executeJavaScript('String(window.getSelection()?.toString() || "").trim()', true)).trim();
+    const selected = String(await tab.engineTab.executeJavaScript('String(window.getSelection()?.toString() || "").trim()', true)).trim();
     if (!selected) return { ok: false, error: 'Select some text on the webpage first.' };
     const target = /^[a-z]{2,3}(-[A-Z]{2})?$/.test(settings.translationTarget || 'en') ? settings.translationTarget : 'en';
     const template = validateTranslationTemplate(settings.translationTextTemplate, 'text') || DEFAULT_SETTINGS.translationTextTemplate;
@@ -3287,7 +3326,7 @@ async function executeBrowserCommand(command, payload = {}) {
     case 'move-tab-container': return moveTabToContainer(payload.id, payload.containerId);
     case 'open-container': { const container = (data.tabContainers || []).find((item) => item.id === String(payload.id)); if (!container) return { ok: false, error: 'Container not found.' }; createTab(null, { activate: true, containerId: container.id }); return { ok: true }; }
     case 'new-private-tab': createTab(null, { activate: true, isPrivate: true }); return { ok: true };
-    case 'reopen-closed': { const index = Number.isInteger(Number(payload.index)) ? Math.max(0, Math.min(recentlyClosed.length - 1, Number(payload.index))) : 0; const entry = recentlyClosed.splice(index, 1)[0]; if (!entry) return { ok: false, error: 'There are no recently closed tabs.' }; createTab(entry.url || null, { activate: true, workspaceId: data.workspaces.some((item) => item.id === entry.workspaceId) ? entry.workspaceId : data.activeWorkspaceId, pinned: entry.pinned, containerId: entry.containerId || 'default' }); sendState(); return { ok: true }; }
+    case 'reopen-closed': { const index = Number.isInteger(Number(payload.index)) ? Math.max(0, Math.min(recentlyClosed.length - 1, Number(payload.index))) : 0; const entry = recentlyClosed.splice(index, 1)[0]; if (!entry) return { ok: false, error: 'There are no recently closed tabs.' }; createTab(entry.url || null, { activate: true, workspaceId: data.workspaces.some((item) => item.id === entry.workspaceId) ? entry.workspaceId : data.activeWorkspaceId, pinned: entry.pinned, containerId: entry.containerId || 'default', engineId: entry.engineId || browserEngineManager.defaultEngineId }); sendState(); return { ok: true }; }
     case 'back': runOnActiveTab('back'); return { ok: true };
     case 'forward': runOnActiveTab('forward'); return { ok: true };
     case 'reload': runOnActiveTab('reload'); return { ok: true };
@@ -3318,7 +3357,7 @@ async function executeBrowserCommand(command, payload = {}) {
     case 'apps': setPanelVisible(true, 'apps'); return { ok: true };
     case 'sleep-inactive': {
       let count = 0;
-      for (const tab of getWorkspaceTabs().slice()) if (tab.id !== activeTabId && !tab.pinned && !splitTabIds.includes(tab.id) && !tab.isPrivate && !tab.isNewTab && !tab.view.webContents.isCurrentlyAudible()) { if (sleepTab(tab.id).ok) count += 1; }
+      for (const tab of getWorkspaceTabs().slice()) if (tab.id !== activeTabId && !tab.pinned && !splitTabIds.includes(tab.id) && !tab.isPrivate && !tab.isNewTab && !tab.engineTab.isCurrentlyAudible()) { if (sleepTab(tab.id).ok) count += 1; }
       return { ok: true, count };
     }
     case 'tab': { const tab = getTab(payload.id); if (tab) { switchWorkspace(tab.workspaceId); setActiveTab(tab.id); } return { ok: Boolean(tab) }; }
@@ -3343,9 +3382,9 @@ async function saveSelectionAsNote() {
   const tab = getActiveTab();
   if (!tab || tab.isNewTab || tab.sleeping) return { ok: false, error: 'Open a webpage and select some text first.' };
   try {
-    const selection = await tab.view.webContents.executeJavaScript('String(window.getSelection()?.toString() || "").trim()');
+    const selection = await tab.engineTab.executeJavaScript('String(window.getSelection()?.toString() || "").trim()');
     if (!selection) return { ok: false, error: 'Select text on the webpage first.' };
-    return createNote({ title: `Quote from ${tab.title || 'webpage'}`, content: String(selection).slice(0, 20000), url: tab.view.webContents.getURL() });
+    return createNote({ title: `Quote from ${tab.title || 'webpage'}`, content: String(selection).slice(0, 20000), url: tab.engineTab.getURL() });
   } catch (error) { return { ok: false, error: error.message }; }
 }
 
@@ -3360,7 +3399,7 @@ async function openLocalPdf() {
   tab.isNewTab = false;
   tab.localPdfPath = pdfPath;
   tab.title = path.basename(pdfPath);
-  tab.view.webContents.loadURL(pathToFileURL(pdfPath).href).catch((error) => console.warn('PDF open failed:', error.message));
+  tab.engineTab.navigate(pathToFileURL(pdfPath).href).catch((error) => console.warn('PDF open failed:', error.message));
   sendState();
   return { ok: true };
 }
@@ -3507,13 +3546,13 @@ async function createAutomaticBackup(force = false) {
 }
 function addSitePermissionExpiry(origin, permission, allowed, hours) { return setSitePermission(origin, permission, allowed, hours); }
 function setSiteJavascript(enabled) {
-  const tab = getActiveTab(); const origin = getOrigin(tab?.view.webContents.getURL() || '');
+  const tab = getActiveTab(); const origin = getOrigin(tab?.engineTab.getURL() || '');
   if (!origin) return { ok: false, error: 'Open a website first.' };
   data.siteSettings[origin] ||= {}; data.siteSettings[origin].javascriptDisabled = !Boolean(enabled); saveData();
   return applySiteSettingsToTab(tab).then(() => { sendState(); return { ok: true }; });
 }
 function setSitePopupPolicy(policy) {
-  const tab = getActiveTab(); const origin = getOrigin(tab?.view.webContents.getURL() || '');
+  const tab = getActiveTab(); const origin = getOrigin(tab?.engineTab.getURL() || '');
   if (!origin || !['allow','block'].includes(policy)) return { ok: false, error: 'Choose a valid site and pop-up setting.' };
   data.siteSettings[origin] ||= {}; data.siteSettings[origin].popupPolicy = policy; saveData(); sendState(); return { ok: true };
 }
@@ -3620,7 +3659,7 @@ async function checkBrowserUpdates() {
 async function openPageSource() {
   const tab = getActiveTab(); if (!tab || tab.isNewTab || tab.sleeping) return { ok: false, error: 'Open a loaded webpage first.' };
   try {
-    const source = await tab.view.webContents.executeJavaScript('document.documentElement ? document.documentElement.outerHTML : ""', true);
+    const source = await tab.engineTab.executeJavaScript('document.documentElement ? document.documentElement.outerHTML : ""', true);
     const result = await dialog.showSaveDialog(mainWindow, { title: 'Save webpage source', defaultPath: 'page-source.html', filters: [{ name: 'HTML', extensions: ['html'] }] });
     if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
     fs.writeFileSync(result.filePath, `<!doctype html>\n${source}`, 'utf8'); shell.showItemInFolder(result.filePath); return { ok: true, path: result.filePath };
@@ -3656,13 +3695,13 @@ async function runPanelAction(action, payload = {}) {
     case 'restore-session': return restoreSavedSession(payload.id);
     case 'delete-session': data.sessions = data.sessions.filter((item) => item.id !== String(payload.id)); saveData(); for (const tab of tabs) if (tab.isNewTab) loadNewTabPage(tab); sendState(); return { ok: true };
     case 'sleep-tab': return sleepTab(payload.id);
-    case 'sleep-inactive': { let count = 0; for (const tab of getWorkspaceTabs().slice()) if (tab.id !== activeTabId && !tab.pinned && !tab.isPrivate && !tab.isNewTab && !tab.sleeping && !splitTabIds.includes(tab.id) && !tab.view.webContents.isCurrentlyAudible()) { if (sleepTab(tab.id).ok) count += 1; } sendState(); return { ok: true, count }; }
+    case 'sleep-inactive': { let count = 0; for (const tab of getWorkspaceTabs().slice()) if (tab.id !== activeTabId && !tab.pinned && !tab.isPrivate && !tab.isNewTab && !tab.sleeping && !splitTabIds.includes(tab.id) && !tab.engineTab.isCurrentlyAudible()) { if (sleepTab(tab.id).ok) count += 1; } sendState(); return { ok: true, count }; }
     case 'wake-all-tabs': { let count = 0; for (const tab of tabs) if (tab.sleeping) { wakeTab(tab); count += 1; } sendState(); return { ok: true, count }; }
     case 'capture-page': return captureActivePage();
     case 'capture-selection': return saveSelectionAsNote();
     case 'open-local-pdf': return openLocalPdf();
     case 'set-auto-sleep': { const value = Number(payload.minutes); if (![0,15,30,60,120].includes(value)) return { ok:false, error:'Invalid sleep interval.' }; settings.autoSleepMinutes=value; saveSettings(); sendState(); return {ok:true}; }
-    case 'reload-tab': { const tab = getTab(payload.id); if (!tab || tab.view.webContents.isDestroyed()) return { ok: false, error: 'Tab not found.' }; if (tab.sleeping) { wakeTab(tab); return { ok: true }; } if (tab.isCrashPage && tab.crashUrl) { tab.isCrashPage = false; tab.crashed = false; tab.crashReason = ''; navigateTab(tab, tab.crashUrl); } else { tab.unresponsive = false; tab.recovering = false; tab.view.webContents.reload(); } sendState(); return { ok: true }; }
+    case 'reload-tab': { const tab = getTab(payload.id); if (!tab || tab.engineTab.isDestroyed()) return { ok: false, error: 'Tab not found.' }; if (tab.sleeping) { wakeTab(tab); return { ok: true }; } if (tab.isCrashPage && tab.crashUrl) { tab.isCrashPage = false; tab.crashed = false; tab.crashReason = ''; navigateTab(tab, tab.crashUrl); } else { tab.unresponsive = false; tab.recovering = false; tab.engineTab.reload(); } sendState(); return { ok: true }; }
     case 'save-performance-settings': { if (typeof payload.monitoring === 'boolean') settings.healthMonitoringEnabled = payload.monitoring; if (typeof payload.autoRecover === 'boolean') settings.autoRecoverCrashedTabs = payload.autoRecover; saveSettings(); sendState(); return { ok: true }; }
     case 'clear-health-log': { data.healthEvents = []; saveData(); sendState(); return { ok: true }; }
     case 'export-health-report': return exportHealthReport();
@@ -3762,7 +3801,7 @@ async function runPanelAction(action, payload = {}) {
     case 'restore-deleted-bookmark': return restoreDeletedBookmark(payload.id);
     case 'clear-cookie': return clearCookie(payload.origin, payload.name);
     case 'list-site-cookies': return listSiteCookies();
-    case 'site-zoom': return setSiteZoom(getOrigin(getActiveTab()?.view.webContents.getURL() || ''), payload.factor);
+    case 'site-zoom': return setSiteZoom(getOrigin(getActiveTab()?.engineTab.getURL() || ''), payload.factor);
     case 'site-javascript': return setSiteJavascript(payload.enabled);
     case 'site-popups': return setSitePopupPolicy(payload.policy);
     case 'site-permission-expiry': return setSitePermission(payload.origin, payload.permission, payload.allowed, payload.expiryHours);
@@ -3780,7 +3819,7 @@ async function runPanelAction(action, payload = {}) {
     case 'toggle-adblock': settings.adBlockingEnabled = Boolean(payload.enabled); saveSettings(); await initializeAdBlocker(session.fromPartition(REGULAR_PARTITION), privateSession); await refreshContainerSessionFilters(); sendState(); return { ok: true, status: adBlockerStatus };
     case 'adblock-lists': settings.adblockAds = Boolean(payload.ads); settings.adblockTrackers = Boolean(payload.trackers); settings.adblockAnnoyances = Boolean(payload.annoyances); saveSettings(); return updateAdblockFilters();
     case 'adblock-update': return updateAdblockFilters();
-    case 'adblock-whitelist-toggle': return toggleAdblockWhitelist(payload.origin || getOrigin(getActiveTab()?.view.webContents.getURL() || ''));
+    case 'adblock-whitelist-toggle': return toggleAdblockWhitelist(payload.origin || getOrigin(getActiveTab()?.engineTab.getURL() || ''));
     case 'adblock-add-host': return addAdblockHost(payload.host);
     case 'adblock-remove-host': settings.adblockCustomHosts = settings.adblockCustomHosts.filter((host) => host !== String(payload.host)); saveSettings(); return updateAdblockFilters();
     case 'adblock-add-list': return addAdblockListUrl(payload.url);
@@ -3967,7 +4006,7 @@ function createMainWindow() {
   mainWindow.on('closed', () => {
     if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close();
     saveData();
-    for (const tab of tabs) if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
+    for (const tab of tabs) if (!tab.engineTab.isDestroyed()) tab.engineTab.close();
     tabs.length = 0;
     privateDownloads.length = 0;
     clearPrivateSessionData();
@@ -4021,7 +4060,7 @@ app.whenReady().then(async () => {
     if (!settings.autoSleepMinutes) return;
     const cutoff = Date.now() - settings.autoSleepMinutes * 60 * 1000;
     for (const tab of tabs) {
-      if (tab.id !== activeTabId && !tab.pinned && !tab.isPrivate && !tab.isNewTab && !tab.sleeping && !splitTabIds.includes(tab.id) && tab.lastActiveAt < cutoff && !tab.view.webContents.isCurrentlyAudible()) sleepTab(tab.id);
+      if (tab.id !== activeTabId && !tab.pinned && !tab.isPrivate && !tab.isNewTab && !tab.sleeping && !splitTabIds.includes(tab.id) && tab.lastActiveAt < cutoff && !tab.engineTab.isCurrentlyAudible()) sleepTab(tab.id);
     }
   }, 60000);
   vaultAutoLockTimer = setInterval(() => {
