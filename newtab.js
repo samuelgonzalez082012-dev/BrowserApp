@@ -1,6 +1,6 @@
 'use strict';
 const params = new URLSearchParams(window.location.search);
-const engine = params.get('engine') || 'google';
+const engine = params.get('engine') || 'brave';
 const theme = params.get('theme') === 'light' ? 'light' : 'dark';
 const accent = params.get('accent') || 'blue';
 const preset = params.get('preset') || 'graphite';
@@ -42,6 +42,7 @@ document.getElementById('recent-section').hidden = !showRecent;
 document.getElementById('notes-section').hidden = !showNotes;
 
 const searchEngines = {
+  brave: (query) => `https://search.brave.com/search?q=${encodeURIComponent(query)}`,
   google: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
   duckduckgo: (query) => `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
   bing: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`

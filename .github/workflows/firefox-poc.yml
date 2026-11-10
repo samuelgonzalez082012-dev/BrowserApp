@@ -1,0 +1,44 @@
+name: Firefox POC checks
+
+on:
+  push:
+    branches: [feature/firefox-gecko-poc]
+  pull_request:
+    branches: [main]
+
+jobs:
+  javascript-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Check Firefox POC JavaScript syntax
+        run: |
+          node --check firefox-poc/main.js
+          node --check firefox-poc/preload.js
+          node --check firefox-poc/renderer.js
+      - name: Parse and compile native PowerShell host
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            'firefox-poc/windows-window-host.ps1',
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List
+            exit 1
+          }
+          '{"id":1,"operation":"shutdown"}' | powershell.exe -NoProfile -ExecutionPolicy Bypass -File firefox-poc/windows-window-host.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';">
+  <title>BrowserApp Firefox POC</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, Segoe UI, sans-serif; background: #11151d; color: #e8edf7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; }
+    .toolbar { height: 82px; display: grid; grid-template-columns: auto minmax(180px, 1fr) auto; align-items: center; gap: 12px; padding: 12px 18px; background: #171d28; border-bottom: 1px solid #2a3444; position: relative; z-index: 2; }
+    .brand { font-size: 13px; font-weight: 700; letter-spacing: .12em; white-space: nowrap; color: #a9bcff; }
+    .nav { display: flex; gap: 6px; }
+    button { border: 1px solid #354256; border-radius: 9px; background: #202938; color: #e8edf7; min-width: 38px; height: 38px; cursor: pointer; font-size: 15px; }
+    button:hover { background: #2a374b; }
+    button:disabled { opacity: .35; cursor: default; }
+    form { display: flex; min-width: 0; gap: 8px; }
+    input { width: 100%; min-width: 0; height: 38px; border: 1px solid #354256; border-radius: 9px; background: #0f141d; color: #e8edf7; padding: 0 13px; outline: none; }
+    input:focus { border-color: #8da7ff; }
+    .status { display: flex; align-items: center; gap: 7px; color: #aab6c8; font-size: 11px; white-space: nowrap; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #e4a65c; }
+    .dot.ready { background: #63d7a1; }
+    .content { position: absolute; top: 82px; left: 0; right: 0; bottom: 0; background: #fff; }
+    .notice { position: absolute; z-index: 3; top: 94px; left: 12px; max-width: min(620px, calc(100vw - 24px)); padding: 10px 13px; border: 1px solid #45536a; border-radius: 9px; background: rgba(18, 24, 34, .94); color: #dce5f4; font-size: 12px; box-shadow: 0 8px 24px #0005; }
+    .notice:empty { display: none; }
+    .meta { display: none; }
+    @media (max-width: 800px) { .toolbar { grid-template-columns: auto 1fr; height: 82px; } .status { display: none; } .brand { font-size: 11px; } }
+  </style>
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">BROWSERAPP / GECKO</div>
+    <form id="address-form">
+      <div class="nav">
+        <button id="back" type="button" aria-label="Back">←</button>
+        <button id="forward" type="button" aria-label="Forward">→</button>
+        <button id="reload" type="button" aria-label="Reload">↻</button>
+      </div>
+      <input id="address" type="text" value="about:blank" autocomplete="off" spellcheck="false" aria-label="Website address">
+      <button type="submit">Go</button>
+    </form>
+    <div class="status"><span id="status-dot" class="dot"></span><span id="status-text">Starting Firefox…</span></div>
+  </header>
+  <main class="content" aria-label="Embedded Firefox content"></main>
+  <div id="notice" class="notice" role="status"></div>
+  <script src="./renderer.js"></script>
+</body>
+</html>
