@@ -161,6 +161,7 @@ const DEFAULT_SETTINGS = {
   customSearchEngines: [],
   organizeDownloads: false,
   maxConcurrentDownloads: 3,
+  downloadRetentionDays: 0,
   updateManifestUrl: '',
   extensionCatalogUrl: '',
   strictReferrerPolicy: true,
@@ -278,6 +279,7 @@ const privateDownloads = [];
 const recentlyClosed = [];
 const miniWindows = new Set();
 let sleepTimer = null;
+let downloadScheduleTimer = null;
 let performanceSampleTimer = null;
 let latestAppMetrics = [];
 let latestAppMetricsAt = 0;
@@ -573,6 +575,7 @@ function readPersistence() {
     customSearchEngines: Array.isArray(savedSettings.customSearchEngines) ? savedSettings.customSearchEngines.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.template === 'string' && item.template.includes('{searchTerms}') && /^https:\/\//i.test(item.template)).slice(0, 20) : [],
     organizeDownloads: Boolean(savedSettings.organizeDownloads),
     maxConcurrentDownloads: Number.isInteger(Number(savedSettings.maxConcurrentDownloads)) ? Math.min(10, Math.max(1, Number(savedSettings.maxConcurrentDownloads))) : DEFAULT_SETTINGS.maxConcurrentDownloads,
+    downloadRetentionDays: [0,7,30,90].includes(Number(savedSettings.downloadRetentionDays)) ? Number(savedSettings.downloadRetentionDays) : 0,
     updateManifestUrl: typeof savedSettings.updateManifestUrl === 'string' ? savedSettings.updateManifestUrl.slice(0, 500) : '',
     extensionCatalogUrl: typeof savedSettings.extensionCatalogUrl === 'string' && /^https:\/\//i.test(savedSettings.extensionCatalogUrl) ? savedSettings.extensionCatalogUrl.slice(0, 500) : '',
     strictReferrerPolicy: savedSettings.strictReferrerPolicy !== false,
@@ -871,8 +874,10 @@ function toPublicDownload(item) {
       percent: Math.max(0, nativeItem.getPercentComplete()),
       paused: nativeItem.isPaused(),
       queued,
+      scheduled: downloadQueue.status(item.id) === 'scheduled',
+      scheduledAt: item.scheduledAt || 0,
       canResume: nativeItem.canResume(),
-      state: queued ? 'queued' : (item.state === 'interrupted' ? 'interrupted' : nativeItem.isPaused() ? 'paused' : nativeItem.getState())
+      state: queued ? 'queued' : downloadQueue.status(item.id) === 'scheduled' ? 'scheduled' : (item.state === 'interrupted' ? 'interrupted' : nativeItem.isPaused() ? 'paused' : nativeItem.getState())
     };
   }
   return { ...item };
@@ -930,6 +935,7 @@ function getPublicState() {
     profile: { id: activeProfileId, name: getCurrentProfile()?.name || 'Profile', icon: getCurrentProfile()?.icon || '👤', color: getCurrentProfile()?.color || '#93a9ff', guest: Boolean(getCurrentProfile()?.guest) },
     profiles: profileRegistry.profiles.map((profile) => ({ id: profile.id, name: profile.name, icon: profile.icon, color: profile.color, guest: Boolean(profile.guest), active: profile.id === activeProfileId })),
     workspaces: data.workspaces.map((workspace) => ({ ...workspace, tabCount: getWorkspaceTabs(workspace.id).length })),
+    mediaTabs: tabs.filter((tab) => !tab.isPrivate && !isTemporaryContainerTab(tab) && !tab.engineTab.isDestroyed() && tab.engineTab.isCurrentlyAudible()).map((tab) => ({ id: tab.id, title: String(tab.title || 'Media tab').slice(0, 120), url: tab.engineTab.getURL(), muted: tab.engineTab.isAudioMuted() })),
     allTabs: tabs.filter((tab) => !tab.isPrivate).map((tab) => ({ id: tab.id, engineId: tab.engineId || browserEngineManager.defaultEngineId, title: tab.title, url: tab.sleeping ? tab.savedUrl : (tab.isNewTab ? '' : (tab.crashUrl || (tab.engineTab.isDestroyed() ? '' : tab.engineTab.getURL()))), workspaceId: tab.workspaceId, groupId: tab.groupId || null, containerId: tab.containerId || 'default', pinned: Boolean(tab.pinned), audible: !tab.engineTab.isDestroyed() && tab.engineTab.isCurrentlyAudible(), sleeping: Boolean(tab.sleeping), crashed: Boolean(tab.crashed), crashPage: Boolean(tab.isCrashPage), recovering: Boolean(tab.recovering), unresponsive: Boolean(tab.unresponsive) })),
     tabGroups: data.tabGroups,
     containers: (data.tabContainers || []).map((container) => ({ ...container, sessionTemporary: Boolean(container.temporary || activeProfileIsGuest), tabCount: tabs.filter((tab) => !tab.isPrivate && tab.containerId === container.id).length, active: active && !active.isPrivate && active.containerId === container.id })),
@@ -1722,6 +1728,16 @@ function openUrlInActiveTab(url) {
   else createTab(url, { activate: true });
 }
 
+async function hashDownloadedFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', reject);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
 function addDownload(item, sourceWebContents) {
   const id = makeId('download');
   const filename = path.basename(item.getFilename() || 'download') || 'download';
@@ -1736,28 +1752,19 @@ function addDownload(item, sourceWebContents) {
       const ext = path.extname(filename);
       const base = path.basename(filename, ext);
       let counter = 1;
-      while (fs.existsSync(output)) output = path.join(settings.downloadPath, `${base} (${counter++})${ext}`);
+      while (fs.existsSync(output)) output = path.join(destinationFolder, base + ' (' + counter++ + ')' + ext);
       item.setSavePath(output);
-    } catch (error) {
-      console.error('Could not set download path:', error);
-    }
+    } catch (error) { console.error('Could not set download path:', error); }
   }
-
   const sourceTab = tabs.find((tab) => !tab.engineTab.isDestroyed() && tab.engineTab.id === sourceWebContents?.id);
   const isPrivateDownload = Boolean(sourceTab?.isPrivate || isTemporaryContainerTab(sourceTab));
-  const queued = downloadQueue.enqueue(id) === 'queued';
+  const existingDuplicate = [...data.downloads, ...privateDownloads].find((entry) => entry.url === item.getURL() && entry.state === 'completed');
+  const queueState = downloadQueue.enqueue(id);
   const record = {
-    id,
-    filename,
-    url: item.getURL(),
-    filePath: '',
-    state: queued ? 'queued' : 'progressing',
-    queued,
-    percent: 0,
-    receivedBytes: 0,
-    totalBytes: item.getTotalBytes(),
-    startedAt: Date.now(),
-    completedAt: null
+    id, filename, url: item.getURL(), filePath: '', state: queueState === 'queued' ? 'queued' : 'progressing',
+    queued: queueState === 'queued', scheduled: false, scheduledAt: 0, duplicateOf: existingDuplicate?.id || null,
+    percent: 0, receivedBytes: 0, totalBytes: item.getTotalBytes(), speedBps: 0, speedSamples: [],
+    lastSpeedSampleAt: Date.now(), lastReceivedBytes: 0, startedAt: Date.now(), completedAt: null, sha256: ''
   };
   if (isPrivateDownload) privateDownloads.unshift(record);
   else data.downloads.unshift(record);
@@ -1766,35 +1773,43 @@ function addDownload(item, sourceWebContents) {
   activeDownloads.set(id, { item, sourceWebContents });
   if (!isPrivateDownload) saveData();
   sendState();
-
   item.on('updated', (_event, state) => {
-    record.queued = downloadQueue.status(id) === 'queued';
-    record.state = record.queued ? 'queued' : item.isPaused() ? 'paused' : state;
+    const queueStatus = downloadQueue.status(id);
+    record.queued = queueStatus === 'queued';
+    record.scheduled = queueStatus === 'scheduled';
+    record.state = record.queued ? 'queued' : record.scheduled ? 'scheduled' : item.isPaused() ? 'paused' : state;
     record.receivedBytes = item.getReceivedBytes();
     record.totalBytes = item.getTotalBytes();
     record.percent = Math.max(0, item.getPercentComplete());
+    const now = Date.now();
+    const elapsed = Math.max(0.001, (now - (record.lastSpeedSampleAt || now)) / 1000);
+    const delta = Math.max(0, record.receivedBytes - (record.lastReceivedBytes || 0));
+    record.speedBps = Math.round(delta / elapsed);
+    record.speedSamples = [...(record.speedSamples || []), { at: now, bps: record.speedBps }].slice(-60);
+    record.lastSpeedSampleAt = now;
+    record.lastReceivedBytes = record.receivedBytes;
     sendState();
   });
-
-  item.on('done', (_event, state) => {
-    record.state = state;
-    record.queued = false;
+  item.on('done', async (_event, state) => {
+    record.state = state; record.queued = false; record.scheduled = false; record.scheduledAt = 0;
     record.filename = item.getFilename() || record.filename;
     record.filePath = item.getSavePath() || record.filePath;
-    record.receivedBytes = item.getReceivedBytes();
-    record.totalBytes = item.getTotalBytes();
-    record.percent = state === 'completed' ? 100 : record.percent;
-    record.completedAt = Date.now();
+    record.receivedBytes = item.getReceivedBytes(); record.totalBytes = item.getTotalBytes();
+    record.percent = state === 'completed' ? 100 : record.percent; record.completedAt = Date.now();
     const canKeepForResume = state === 'interrupted' && item.canResume();
     const promoted = canKeepForResume ? downloadQueue.pause(id) : downloadQueue.finish(id);
     if (!canKeepForResume) activeDownloads.delete(id);
     startPromotedDownloads(promoted);
+    if (state === 'completed' && record.filePath && fs.existsSync(record.filePath)) {
+      try { record.sha256 = await hashDownloadedFile(record.filePath); }
+      catch (error) { record.integrityError = String(error.message).slice(0, 300); }
+    }
     if (!isPrivateDownload) saveData();
     sendState();
   });
-
-  if (queued) item.pause();
+  if (queueState === 'queued' || queueState === 'scheduled') item.pause();
 }
+
 
 function configureDownloads(browserSession) {
   browserSession.on('will-download', (_event, item, sourceWebContents) => addDownload(item, sourceWebContents));
@@ -2229,6 +2244,50 @@ function clearPrivateSessionData() {
   Promise.allSettled([privateSession.clearStorageData(), privateSession.clearCache()]).catch((error) => {
     console.warn('Could not fully clear private browsing data:', error.message);
   });
+}
+
+function scheduleDownload(downloadId, at) {
+  const id = String(downloadId), active = activeDownloads.get(id);
+  const record = [...data.downloads, ...privateDownloads].find((item) => item.id === id);
+  const timestamp = new Date(at).getTime();
+  if (!active || !record) return { ok: false, error: 'This download is no longer active.' };
+  if (!Number.isFinite(timestamp) || timestamp < Date.now() + 60000 || timestamp > Date.now() + 30 * 86400000) return { ok: false, error: 'Choose a start time between one minute and 30 days from now.' };
+  const promoted = downloadQueue.schedule(id, timestamp);
+  try { if (!active.item.isPaused()) active.item.pause(); } catch {}
+  record.state = 'scheduled'; record.queued = false; record.scheduled = true; record.scheduledAt = timestamp;
+  startPromotedDownloads(promoted); saveData(); sendState(); return { ok: true, scheduledAt: timestamp };
+}
+function activateScheduledDownloads() {
+  const promoted = downloadQueue.activateDue();
+  for (const record of [...data.downloads, ...privateDownloads]) {
+    const status = downloadQueue.status(record.id);
+    if (status === 'queued') { record.state = 'queued'; record.queued = true; record.scheduled = false; record.scheduledAt = 0; }
+    else if (status === 'scheduled') { record.state = 'scheduled'; record.queued = false; record.scheduled = true; }
+  }
+  if (promoted.length) { startPromotedDownloads(promoted); saveData(); sendState(); }
+}
+function cleanupDownloadHistory() {
+  const days = Number(settings.downloadRetentionDays) || 0;
+  if (!days) return 0;
+  const cutoff = Date.now() - days * 86400000;
+  const before = data.downloads.length;
+  data.downloads = data.downloads.filter((item) => activeDownloads.has(item.id) || (Number(item.completedAt || item.startedAt) || Date.now()) >= cutoff);
+  const removed = before - data.downloads.length;
+  if (removed) { saveData(); sendState(); }
+  return removed;
+}
+async function runGlobalMediaAction(action) {
+  const targets = tabs.filter((tab) => !tab.isPrivate && !isTemporaryContainerTab(tab) && !tab.isNewTab && !tab.sleeping && !tab.engineTab.isDestroyed());
+  let changed = 0;
+  for (const tab of targets) {
+    try {
+      if (action === 'mute-all') { tab.engineTab.setAudioMuted(true); changed += 1; }
+      else if (action === 'unmute-all') { tab.engineTab.setAudioMuted(false); changed += 1; }
+      else if (action === 'pause-all') { await tab.engineTab.executeJavaScript("document.querySelectorAll('audio,video').forEach((media) => media.pause())"); changed += 1; }
+      else if (action === 'resume-all') { await tab.engineTab.executeJavaScript("document.querySelectorAll('audio,video').forEach((media) => { if (media.paused) media.play().catch(() => {}); })"); changed += 1; }
+    } catch {}
+  }
+  sendState(); return { ok: true, changed };
 }
 
 function startPromotedDownloads(ids = []) {
@@ -4115,6 +4174,10 @@ async function runPanelAction(action, payload = {}) {
       sendState(); return { ok: true, provider, restartRequired: true };
     }
     case 'scan-download': return scanDownloadedFile(payload.id);
+    case 'schedule-download': return scheduleDownload(payload.id, payload.at);
+    case 'global-media-action': return runGlobalMediaAction(payload.action);
+    case 'toggle-media-mute': { const tab = getTab(payload.id); if (!tab || tab.engineTab.isDestroyed()) return { ok: false, error: 'Media tab not found.' }; tab.engineTab.setAudioMuted(!tab.engineTab.isAudioMuted()); sendState(); return { ok: true }; }
+    case 'set-download-retention': { const days = Number(payload.days); if (![0,7,30,90].includes(days)) return { ok: false, error: 'Choose 0, 7, 30 or 90 days.' }; settings.downloadRetentionDays = days; saveSettings(); const removed = cleanupDownloadHistory(); sendState(); return { ok: true, removed }; }
     case 'install-local-plugin': return installBrowserPlugin();
     case 'open-local-plugin': return openBrowserPlugin(payload.id);
     case 'close-local-plugin': return closeBrowserPlugin(payload.id);
@@ -4531,6 +4594,7 @@ function createMainWindow() {
 app.whenReady().then(async () => {
   initializeProfileRegistry();
   readPersistence();
+  cleanupDownloadHistory();
   beginRuntimeSession();
   if (settings.extensionCatalogUrl && !safeMode) await loadExtensionCatalog();
 
@@ -4546,6 +4610,8 @@ app.whenReady().then(async () => {
   registerIpc();
   createMainWindow();
   if (process.argv.includes('--launch-installed-apps') && settings.launchInstalledAppsAtStartup) setTimeout(() => openInstalledAppsAtStartup(), 1800);
+  downloadScheduleTimer = setInterval(activateScheduledDownloads, 5000);
+  downloadScheduleTimer.unref?.();
   performanceSampleTimer = setInterval(() => { if (settings.healthMonitoringEnabled !== false) sampleAppMetrics(); }, 5000);
   performanceSampleTimer.unref?.();
   sleepTimer = setInterval(() => {
@@ -4585,6 +4651,7 @@ app.on('before-quit', (event) => {
   markRuntimeCleanShutdown();
   if (sleepTimer) clearInterval(sleepTimer);
   if (performanceSampleTimer) clearInterval(performanceSampleTimer);
+  if (downloadScheduleTimer) clearInterval(downloadScheduleTimer);
   if (vaultAutoLockTimer) clearInterval(vaultAutoLockTimer);
   if (automaticBackupTimer) clearInterval(automaticBackupTimer);
   try { const activeRegular = session.fromPartition(REGULAR_PARTITION); if (adBlockerEngine && adBlockerEngine.isBlockingEnabled(activeRegular)) adBlockerEngine.disableBlockingInSession(activeRegular); } catch {}

@@ -21,7 +21,7 @@ const SECTION_NAMES = {
   performance: 'Performance manager', webpanels: 'Web panels', notifications: 'Notifications', tools: 'Research tools',
   profiles: 'Browser profiles', migration: 'Import and backup', sitecontrols: 'Site controls', apps: 'Installed web apps',
   accessibility: 'Accessibility and translation', developer: 'Developer tools', updates: 'Browser updates', adblock: 'Ad blocker',
-  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', research: 'Research library', themes: 'Personalization studio', security: 'Security dashboard', plugins: 'Local plugins', about: 'About Minimal Browser'
+  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', media: 'Media controls', research: 'Research library', themes: 'Personalization studio', security: 'Security dashboard', plugins: 'Local plugins', about: 'About Minimal Browser'
 };
 
 function escapeHtml(value) {
@@ -148,32 +148,23 @@ function renderHistory() {
 function renderDownloads() {
   const downloads = state.downloads || [];
   const rows = downloads.map((item) => {
-    const inProgress = ['progressing', 'paused', 'interrupted', 'queued'].includes(item.state);
+    const inProgress = ['progressing','paused','interrupted','queued','scheduled'].includes(item.state);
     const isDone = item.state === 'completed';
     const progress = Math.max(0, Math.min(100, Number(item.percent) || 0));
     let controls = '';
-    if (item.state === 'queued') controls = `${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
-    else if (item.state === 'progressing') controls = `${actionButton('Pause', 'download-pause', item.id)} ${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
-    else if (item.state === 'paused') controls = `${actionButton('Resume', 'download-resume', item.id)} ${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
-    else if (item.state === 'interrupted' && item.canResume) controls = `${actionButton('Resume', 'download-resume', item.id)} ${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
+    if (item.state === 'queued') controls = actionButton('Cancel','download-cancel',item.id,'danger-button');
+    else if (item.state === 'scheduled') controls = actionButton('Resume now','download-resume',item.id) + ' ' + actionButton('Cancel','download-cancel',item.id,'danger-button');
+    else if (item.state === 'progressing') controls = actionButton('Pause','download-pause',item.id) + ' ' + actionButton('Schedule','download-schedule',item.id) + ' ' + actionButton('Cancel','download-cancel',item.id,'danger-button');
+    else if (item.state === 'paused') controls = actionButton('Resume','download-resume',item.id) + ' ' + actionButton('Cancel','download-cancel',item.id,'danger-button');
+    else if (item.state === 'interrupted' && item.canResume) controls = actionButton('Resume','download-resume',item.id) + ' ' + actionButton('Cancel','download-cancel',item.id,'danger-button');
     else if (item.state === 'interrupted') controls = '<span class="muted-note">Interrupted — restart from the source website.</span>';
-    else if (isDone) controls = `${actionButton('Open', 'download-open', item.id)} ${actionButton('Show', 'download-show', item.id)} ${actionButton('Scan', 'scan-download', item.id)}`;
-    return `
-      <div class="download-card">
-        <div class="download-top"><span class="download-file-icon">↓</span><div class="row-main"><strong>${escapeHtml(item.filename)}</strong><small>${escapeHtml(item.state)}${item.totalBytes ? ` · ${bytes(item.receivedBytes)} / ${bytes(item.totalBytes)}` : ` · ${bytes(item.receivedBytes)}`}</small></div></div>
-        ${inProgress ? `<div class="progress-track"><span style="width:${progress}%"></span></div>` : ''}
-        <div class="download-controls">${isDone ? '100%' : `${progress}%`} <span>${controls}</span></div>
-      </div>`;
+    else if (isDone) controls = actionButton('Open','download-open',item.id) + ' ' + actionButton('Show','download-show',item.id) + ' ' + actionButton('Scan','scan-download',item.id);
+    const meta = [item.state, item.totalBytes ? bytes(item.receivedBytes) + ' / ' + bytes(item.totalBytes) : bytes(item.receivedBytes), item.speedBps > 0 ? bytes(item.speedBps) + '/s' : '', item.duplicateOf ? 'Duplicate source' : ''].filter(Boolean).join(' · ');
+    return `<div class="download-card" data-download-search="${escapeHtml([item.filename,item.url,item.state].join(' '))}"><div class="download-top"><span class="download-file-icon">↓</span><div class="row-main"><strong>${escapeHtml(item.filename)}</strong><small>${escapeHtml(meta)}</small>${item.state==='scheduled' && item.scheduledAt ? '<small>Starts: '+escapeHtml(dateLabel(item.scheduledAt))+'</small>' : ''}${item.sha256 ? '<small>SHA-256: '+escapeHtml(item.sha256.slice(0,24))+'…</small>' : ''}</div></div>${inProgress ? `<div class="progress-track"><span style="width:${progress}%"></span></div>` : ''}<div class="download-controls">${isDone ? '100%' : progress+'%'} <span>${controls}</span></div></div>`;
   }).join('');
-  return `
-    <section class="section-block">
-      <div class="section-heading"><div><strong>Downloads</strong><p>Progress and completed files.</p></div></div>
-      <div class="folder-setting"><div><strong>Download location</strong><small>${escapeHtml(settingsPathLabel())}</small></div>${actionButton('Change', 'choose-download-folder')}</div>
-      <label class="toggle-row"><span><strong>Organize downloads automatically</strong><small>Sort new downloads into Images, Media, Documents, Archives and Other folders.</small></span><input id="download-organize-toggle" type="checkbox" ${state.settings?.organizeDownloads?'checked':''}></label>
-      <div class="folder-setting"><div><strong>Simultaneous downloads</strong><small>Excess transfers wait in the queue. Active downloads are not stopped if you lower this limit.</small></div><select id="download-concurrency-choice" aria-label="Simultaneous downloads">${Array.from({length:10},(_,index)=>index+1).map((value)=>`<option value="${value}" ${Number(state.settings?.maxConcurrentDownloads || 3)===value?'selected':''}>${value}</option>`).join('')}</select></div><div class="button-line">${actionButton('Clear completed', 'download-clear-completed')}</div>
-      <div class="download-list">${rows || emptyState('Nothing downloaded yet', 'Files you download will appear here.')}</div>
-    </section>`;
+  return `<section class="section-block"><div class="section-heading"><div><strong>Downloads</strong><p>Queue, schedule, search and verify downloaded files. History cleanup never deletes files from disk.</p></div></div><div class="folder-setting"><div><strong>Download location</strong><small>${escapeHtml(settingsPathLabel())}</small></div>${actionButton('Change','choose-download-folder')}</div><label class="toggle-row"><span><strong>Organize downloads automatically</strong><small>Sort new downloads into Images, Media, Documents, Archives and Other folders.</small></span><input id="download-organize-toggle" type="checkbox" ${state.settings?.organizeDownloads?'checked':''}></label><div class="folder-setting"><div><strong>Simultaneous downloads</strong><small>Excess transfers wait in the queue. Active downloads are not stopped if you lower this limit.</small></div><select id="download-concurrency-choice" aria-label="Simultaneous downloads">${Array.from({length:10},(_,index)=>index+1).map((value)=>`<option value="${value}" ${Number(state.settings?.maxConcurrentDownloads || 3)===value?'selected':''}>${value}</option>`).join('')}</select></div><div class="folder-setting"><div><strong>Automatic history cleanup</strong><small>Removes old download records only; downloaded files remain on disk.</small></div><select id="download-retention-choice"><option value="0" ${Number(state.settings?.downloadRetentionDays)===0?'selected':''}>Never</option><option value="7" ${Number(state.settings?.downloadRetentionDays)===7?'selected':''}>After 7 days</option><option value="30" ${Number(state.settings?.downloadRetentionDays)===30?'selected':''}>After 30 days</option><option value="90" ${Number(state.settings?.downloadRetentionDays)===90?'selected':''}>After 90 days</option></select></div><input class="full-input" id="download-search" type="search" placeholder="Search download history"><div class="button-line">${actionButton('Clear completed','download-clear-completed','','danger-button')}</div><div class="download-list" id="download-list">${rows || emptyState('Nothing downloaded yet','Files you download will appear here.')}</div></section>`;
 }
+
 function settingsPathLabel() {
   return state.settings?.downloadPath || 'System Downloads folder';
 }
@@ -500,6 +491,10 @@ function renderPlugins() {
   return `<section class="section-block"><div class="section-heading"><div><strong>Local plugin ecosystem</strong><p>Install local plugins that run in isolated sandboxed windows. Plugins receive only the capability APIs explicitly listed in their manifest; they never receive raw IPC or Node.js access.</p></div></div><div class="button-line">${actionButton('Install local plugin','install-local-plugin','','primary-button')}</div><p class="muted-note">Only install plugins from sources you trust. Plugin code can still access the network from its own web context; review its source and permissions first.</p><div class="feature-list">${rows || emptyState('No local plugins installed','Choose a folder containing a valid plugin.json and entry HTML file.')}</div></section>`;
 }
 
+function renderMediaControls() {
+  const rows = (state.mediaTabs || []).map((tab) => `<div class="list-row"><span class="row-main"><strong>${escapeHtml(tab.title)}</strong><small>${escapeHtml(tab.url)}</small></span>${actionButton('Open tab','open-tab',tab.id)} ${actionButton(tab.muted?'Unmute':'Mute','media-toggle-mute',tab.id)}</div>`).join('');
+  return `<section class="section-block"><div class="section-heading"><div><strong>Global media controls</strong><p>Control audio playback across regular, non-private tabs. Private and temporary sessions are excluded.</p></div></div><div class="button-line">${actionButton('Pause all media','global-media-pause')}${actionButton('Resume all media','global-media-resume')}${actionButton('Mute all tabs','global-media-mute')}${actionButton('Unmute all tabs','global-media-unmute')}</div></section><section class="section-block"><div class="section-heading"><div><strong>Currently audible tabs</strong><p>${(state.mediaTabs || []).length} tabs are currently producing audio.</p></div></div><div class="row-list">${rows || emptyState('No audible tabs','Audio-playing tabs will appear here.')}</div></section>`;
+}
 function renderResearchLibrary() {
   const items = state.researchItems || [];
   const rows = items.map((item) => {
@@ -536,6 +531,7 @@ function renderContent() {
     themes: renderThemeStudio,
     security: renderSecurityDashboard,
     plugins: renderPlugins,
+    media: renderMediaControls,
     history: renderHistory,
     downloads: renderDownloads,
     split: renderSplit,
@@ -719,6 +715,24 @@ async function handleClick(event) {
       }
       showToast(result?.ok ? 'Workflow completed: ' + result.completed + ' steps.' : result?.error || 'Workflow failed.', !result?.ok);
       return;
+    }
+    if (action === 'download-schedule') {
+      const input = window.prompt('Enter a start time (YYYY-MM-DD HH:MM) for this download. The time is local to this computer.');
+      if (!input) return;
+      const parsed = new Date(input.replace(' ','T'));
+      if (!Number.isFinite(parsed.getTime())) { showToast('Enter a valid local date and time.', true); return; }
+      const result = await api.action('schedule-download', { id: value, at: parsed.getTime() });
+      showToast(result?.ok ? 'Download scheduled.' : result?.error || 'Could not schedule download.', !result?.ok);
+      renderContent(); return;
+    }
+    if (action === 'global-media-pause' || action === 'global-media-resume' || action === 'global-media-mute' || action === 'global-media-unmute') {
+      const command = action.replace('global-media-','') + '-all';
+      const result = await api.action('global-media-action', { action: command });
+      showToast(result?.ok ? 'Media controls applied to ' + result.changed + ' tabs.' : result?.error || 'Media control failed.', !result?.ok); return;
+    }
+    if (action === 'media-toggle-mute') {
+      const result = await api.action('toggle-media-mute', { id: value });
+      showToast(result?.ok ? 'Tab audio setting updated.' : result?.error || 'Could not update audio.', !result?.ok); return;
     }
     if (action === 'capture-research-article') {
       const result = await api.action(action);
@@ -1002,6 +1016,11 @@ async function handleClick(event) {
 
 content.addEventListener('click', (event) => { handleClick(event).catch((error) => showToast(error.message, true)); });
 content.addEventListener('input', (event) => {
+  if (event.target.id === 'download-search') {
+    const query = event.target.value.toLowerCase();
+    document.querySelectorAll('#download-list .download-card').forEach((row) => { row.hidden = !row.dataset.downloadSearch.toLowerCase().includes(query); });
+  }
+
   if (event.target.id === 'network-search') {
     const query = event.target.value.toLowerCase();
     document.querySelectorAll('#network-log-rows .log-row').forEach((row) => { row.hidden = !row.textContent.toLowerCase().includes(query); });
@@ -1022,6 +1041,10 @@ content.addEventListener('input', (event) => {
   }
 });
 content.addEventListener('change', async (event) => {
+  if (event.target.id === 'download-retention-choice') {
+    const result = await api.action('set-download-retention', { days: Number(event.target.value) });
+    showToast(result?.ok ? 'Download history cleanup preference saved.' : result?.error || 'Could not save cleanup preference.', !result?.ok);
+  }
   if (event.target.id === 'download-concurrency-choice') {
     const result = await api.action('set-download-concurrency', { limit: Number(event.target.value) });
     if (!result?.ok) showToast(result?.error || 'Could not update download concurrency.', true);
