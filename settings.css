@@ -104,3 +104,55 @@ select,.full-input { height:39px; font-size:11px; }
   .settings-header { padding-inline:12px; }
   .settings-header h1 { font-size:18px; }
 }
+
+
+/* Sidebar navigation layout repair: fixed search/footer, independently scrolling menus. */
+.settings-sidebar {
+  min-height: 0;
+  overflow: hidden;
+  gap: 0;
+}
+.settings-search-wrap {
+  flex: 0 0 auto;
+  margin-bottom: 15px;
+}
+.settings-sidebar-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 4px;
+}
+.settings-nav {
+  flex: 0 0 auto;
+  gap: 3px;
+}
+.settings-nav a {
+  flex: 0 0 auto;
+  min-height: 36px;
+}
+.settings-nav-label {
+  margin: 7px 7px 8px;
+  line-height: 1.35;
+}
+.settings-nav-label-tools {
+  margin-top: 18px;
+}
+.settings-tool-links {
+  flex: 0 0 auto;
+}
+.settings-tool-links button {
+  flex: 0 0 auto;
+  min-height: 35px;
+}
+.settings-sidebar-footer {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+@media (max-width: 650px) {
+  .settings-sidebar { gap: 0; }
+  .settings-search-wrap { margin-bottom: 12px; }
+  .settings-sidebar-scroll { padding-right: 2px; }
+}

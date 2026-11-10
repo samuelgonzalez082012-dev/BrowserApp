@@ -16,6 +16,7 @@
 
     <aside class="settings-sidebar">
       <label class="settings-search-wrap"><span>⌕</span><input id="settings-search" type="search" placeholder="Search settings" autocomplete="off" aria-label="Search settings"></label>
+      <div class="settings-sidebar-scroll">
       <p class="settings-nav-label">BROWSER SETTINGS</p>
     <nav class="settings-nav" aria-label="Settings sections">
       <a class="active" href="#appearance">Appearance</a><a href="#layout">Layout</a><a href="#personalization">Personalize</a><a href="#homepage">New tab</a><a href="#shortcuts">Shortcuts</a><a href="#behavior">Behavior</a><a href="#data">Backup</a><a href="#browser-tools">Browser tools</a>
@@ -28,6 +29,7 @@
         <button type="button" data-open-hub="sitecontrols"><span>⚙</span><span>Site permissions</span></button>
         <button type="button" data-open-hub="extensions"><span>⌘</span><span>Extensions</span></button>
         <button type="button" data-open-hub="migration"><span>⇄</span><span>Import & backup</span></button>
+      </div>
       </div>
       <div class="settings-sidebar-footer"><span class="settings-mark-small">M</span><span><strong>Minimal Browser</strong><small>Local settings</small></span></div>
     </aside>
@@ -140,6 +142,7 @@
     </section>
 
     <footer class="settings-footer"><span id="save-status" role="status">Changes are saved when you click Save preferences.</span><button id="save-settings" type="button">Save preferences</button></footer>
+    </div>
   </main>
   <script src="settings.js"></script>
 </body>
