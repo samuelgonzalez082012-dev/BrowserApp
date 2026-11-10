@@ -19,7 +19,7 @@ const SECTION_NAMES = {
   performance: 'Performance manager', webpanels: 'Web panels', notifications: 'Notifications', tools: 'Research tools',
   profiles: 'Browser profiles', migration: 'Import and backup', sitecontrols: 'Site controls', apps: 'Installed web apps',
   accessibility: 'Accessibility and translation', developer: 'Developer tools', updates: 'Browser updates', adblock: 'Ad blocker',
-  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', research: 'Research library', themes: 'Personalization studio', about: 'About Minimal Browser'
+  passwords: 'Password manager', services: 'Connected services', automations: 'Browser automations', research: 'Research library', themes: 'Personalization studio', security: 'Security dashboard', about: 'About Minimal Browser'
 };
 
 function escapeHtml(value) {
@@ -155,7 +155,7 @@ function renderDownloads() {
     else if (item.state === 'paused') controls = `${actionButton('Resume', 'download-resume', item.id)} ${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
     else if (item.state === 'interrupted' && item.canResume) controls = `${actionButton('Resume', 'download-resume', item.id)} ${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
     else if (item.state === 'interrupted') controls = '<span class="muted-note">Interrupted — restart from the source website.</span>';
-    else if (isDone) controls = `${actionButton('Open', 'download-open', item.id)} ${actionButton('Show', 'download-show', item.id)}`;
+    else if (isDone) controls = `${actionButton('Open', 'download-open', item.id)} ${actionButton('Show', 'download-show', item.id)} ${actionButton('Scan', 'scan-download', item.id)}`;
     return `
       <div class="download-card">
         <div class="download-top"><span class="download-file-icon">↓</span><div class="row-main"><strong>${escapeHtml(item.filename)}</strong><small>${escapeHtml(item.state)}${item.totalBytes ? ` · ${bytes(item.receivedBytes)} / ${bytes(item.totalBytes)}` : ` · ${bytes(item.receivedBytes)}`}</small></div></div>
@@ -483,6 +483,13 @@ function renderThemeStudio() {
   return `<section class="section-block"><div class="section-heading"><div><strong>Workspace appearance profiles</strong><p>Create reusable visual profiles, preview them, then assign them to individual workspaces. Theme documents use a validated schema and cannot execute CSS or scripts.</p></div></div><div class="inline-form"><select id="theme-workspace-target">${workspaceOptions}</select><select id="theme-profile-target"><option value="">Choose profile</option>${profileOptions}</select>${actionButton('Assign','assign-selected-theme')}</div><div class="button-line">${actionButton('Reset workspace appearance','reset-workspace-theme','','danger-button')} ${actionButton('Import theme','import-theme-profile')}</div>${state.themePreviewActive ? '<p class="muted-note">Preview is active and has not been assigned. Apply it to keep the appearance, or cancel to roll back.</p><div class="button-line">'+actionButton('Apply preview','apply-theme-preview','')+' '+actionButton('Cancel preview','cancel-theme-preview')+'</div>' : ''}</section><section class="section-block"><div class="section-heading"><div><strong>Create a theme profile</strong><p>CSS variables are restricted to a safe allow-list of color tokens.</p></div></div><div class="setting-grid"><label>Profile name<input id="theme-profile-name" class="full-input" maxlength="48" placeholder="e.g. Work"></label><label>Theme<select id="theme-profile-theme" class="full-input"><option value="dark">Dark</option><option value="light">Light</option></select></label><label>Preset<select id="theme-profile-preset" class="full-input">${['graphite','midnight','nord','forest','sunset','paper','ocean','lavender','ember'].map((x)=>`<option value="${x}">${x}</option>`).join('')}</select></label><label>Accent<select id="theme-profile-accent" class="full-input">${['blue','violet','green','orange','rose','cyan','amber','coral'].map((x)=>`<option value="${x}">${x}</option>`).join('')}</select></label><label>Density<select id="theme-profile-density" class="full-input"><option>comfortable</option><option>compact</option><option>spacious</option></select></label><label>Corners<select id="theme-profile-corners" class="full-input"><option>soft</option><option>sharp</option><option>rounded</option></select></label><label>Font<select id="theme-profile-font" class="full-input"><option>system</option><option>inter</option><option>arial</option><option>georgia</option><option>mono</option></select></label><label>Custom accent<input id="theme-profile-custom-accent" class="full-input" type="color" value="#93a9ff"></label></div><label>Validated color variables (JSON)<textarea id="theme-profile-variables" class="full-textarea" rows="4" placeholder='{"--accent":"#93a9ff","--surface":"#20242c"}'></textarea></label><div class="button-line">${actionButton('Save theme profile','create-theme-profile','','primary-button')}</div></section><section class="section-block"><div class="section-heading"><div><strong>Saved profiles</strong><p>${profiles.length} profiles stored locally.</p></div></div><div class="feature-list">${rows || emptyState('No theme profiles','Create a profile to customize a workspace.')}</div></section>`;
 }
 
+function renderSecurityDashboard() {
+  const audit = state.privacyAudit || {};
+  const extensions = (audit.extensions || []).map((item) => `<div class="log-row"><strong>${escapeHtml(item.level.toUpperCase())} · ${escapeHtml(item.name)} ${item.enabled ? '' : '(disabled)'}</strong><small>${escapeHtml(item.permissions.join(', ') || 'No declared permissions')}</small></div>`).join('');
+  const events = (state.securityEvents || []).slice(0, 50).map((item) => `<div class="log-row"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)} · ${escapeHtml(dateLabel(item.at))}</small></div>`).join('');
+  return `<section class="section-block"><div class="section-heading"><div><strong>Privacy and security overview</strong><p>Local permission and extension audit. Risk labels are indicators based on declared permissions, not proof that an extension is malicious.</p></div></div><div class="stats-grid"><div class="stat-card"><strong>${audit.allowedPermissionCount || 0}</strong><small>Allowed site permissions</small></div><div class="stat-card"><strong>${audit.deniedPermissionCount || 0}</strong><small>Denied site permissions</small></div><div class="stat-card"><strong>${audit.highRiskExtensionCount || 0}</strong><small>High-risk extensions</small></div><div class="stat-card"><strong>${audit.extensionCount || 0}</strong><small>Installed extensions</small></div></div></section><section class="section-block"><div class="section-heading"><div><strong>Secure DNS</strong><p>Uses Chromium DNS-over-HTTPS with a fixed trusted provider. A browser restart is required. This does not protect traffic from all network monitoring or replace a VPN.</p></div></div><select id="secure-dns-provider" class="full-input"><option value="system" ${state.secureDnsProvider==='system'?'selected':''}>Use system DNS</option><option value="cloudflare" ${state.secureDnsProvider==='cloudflare'?'selected':''}>Cloudflare DNS over HTTPS</option><option value="google" ${state.secureDnsProvider==='google'?'selected':''}>Google DNS over HTTPS</option><option value="quad9" ${state.secureDnsProvider==='quad9'?'selected':''}>Quad9 DNS over HTTPS</option></select><div class="button-line">${actionButton('Save DNS provider','save-secure-dns','','primary-button')}</div></section><section class="section-block"><div class="section-heading"><div><strong>Extension permission audit</strong><p>Review broad host access, cookies, history, network interception and other powerful permissions.</p></div></div>${extensions || emptyState('No extensions found','Installed extension manifests will appear here.')}</section><section class="section-block"><div class="section-heading"><div><strong>Security event log</strong><p>Local audit entries for permission changes and download scans.</p></div></div>${events || emptyState('No security events','Security-relevant actions will be recorded here.')}</section>`;
+}
+
 function renderResearchLibrary() {
   const items = state.researchItems || [];
   const rows = items.map((item) => {
@@ -517,6 +524,7 @@ function renderContent() {
     bookmarks: renderBookmarks,
     research: renderResearchLibrary,
     themes: renderThemeStudio,
+    security: renderSecurityDashboard,
     history: renderHistory,
     downloads: renderDownloads,
     split: renderSplit,
@@ -611,6 +619,20 @@ async function handleClick(event) {
       const output = document.getElementById('dev-output');
       if (result?.ok && output) { output.hidden = false; output.textContent = JSON.stringify(result.result, null, 2); }
       else showToast(result?.error || 'Inspection failed.', true);
+      return;
+    }
+    if (action === 'save-secure-dns') {
+      const provider = document.getElementById('secure-dns-provider')?.value || 'system';
+      const result = await api.action('set-secure-dns-provider', { provider });
+      if (!result?.ok) showToast(result?.error || 'Could not save DNS preference.', true);
+      else if (window.confirm('Secure DNS preference saved. Restart the browser now to apply it?')) await api.action('restart-browser');
+      else showToast('Saved. Restart the browser later to apply Secure DNS.');
+      return;
+    }
+    if (action === 'scan-download') {
+      showToast('Starting Microsoft Defender scan…');
+      const result = await api.action(action, { id: value });
+      showToast(result?.ok ? 'Download scan completed.' : result?.error || 'Download scan failed.', !result?.ok);
       return;
     }
     if (action === 'capture-research-article') {

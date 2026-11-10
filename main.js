@@ -26,6 +26,18 @@ const { DownloadQueue } = require('./download-queue');
 const researchLibrary = require('./research-library');
 const themeStudio = require('./theme-studio');
 const developerTools = require('./developer-tools');
+const privacyAudit = require('./privacy-audit');
+const { execFile } = require('node:child_process');
+
+const earlyProfileRegistry = (() => { try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'browser-profiles.json'), 'utf8')); } catch { return { activeProfileId: 'personal' }; } })();
+const earlyProfileId = /^[a-z0-9_-]{2,64}$/i.test(earlyProfileRegistry.activeProfileId || '') ? earlyProfileRegistry.activeProfileId : 'personal';
+const earlySettingsPath = path.join(app.getPath('userData'), 'profiles', earlyProfileId, 'browser-settings.json');
+const earlySettings = (() => { try { return JSON.parse(fs.readFileSync(earlySettingsPath, 'utf8')); } catch { try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'browser-settings.json'), 'utf8')); } catch { return {}; } } })();
+const earlyDnsProvider = privacyAudit.normalizeSecureDnsProvider(process.argv.find((arg) => arg.startsWith('--secure-dns-provider='))?.split('=')[1] || earlySettings.secureDnsProvider);
+if (earlyDnsProvider !== 'system') {
+  app.commandLine.appendSwitch('dns-over-https-mode', 'secure');
+  app.commandLine.appendSwitch('dns-over-https-templates', privacyAudit.SECURE_DNS_PROVIDERS[earlyDnsProvider]);
+}
 
 const WINDOW_WIDTH = 1360;
 const WINDOW_HEIGHT = 900;
@@ -158,7 +170,8 @@ const DEFAULT_SETTINGS = {
   autoBackupDays: 1,
   spellcheckEnabled: true,
   accessibilityHighContrast: false,
-  accessibilityReducedMotion: false
+  accessibilityReducedMotion: false,
+  secureDnsProvider: 'system'
 };
 
 function defaultData() {
@@ -179,6 +192,7 @@ function defaultData() {
     notes: [],
     collections: [],
     researchItems: [],
+    securityEvents: [],
     themeProfiles: [],
     workspaceThemeProfiles: {},
     sessions: [],
@@ -566,7 +580,8 @@ function readPersistence() {
     autoBackupDays: [1, 7, 14, 30].includes(Number(savedSettings.autoBackupDays)) ? Number(savedSettings.autoBackupDays) : 1,
     spellcheckEnabled: savedSettings.spellcheckEnabled !== false,
     accessibilityHighContrast: Boolean(savedSettings.accessibilityHighContrast),
-    accessibilityReducedMotion: Boolean(savedSettings.accessibilityReducedMotion)
+    accessibilityReducedMotion: Boolean(savedSettings.accessibilityReducedMotion),
+    secureDnsProvider: privacyAudit.normalizeSecureDnsProvider(savedSettings.secureDnsProvider)
   };
   if (!Object.hasOwn(SEARCH_ENGINES, settings.searchEngine) && !settings.customSearchEngines.some((engine) => engine.id === settings.searchEngine)) settings.searchEngine = 'brave';
   aiKeyEncrypted = typeof savedSettings.aiKeyEncrypted === 'string' ? savedSettings.aiKeyEncrypted : null;
@@ -638,6 +653,7 @@ function readPersistence() {
     notes: Array.isArray(savedData.notes) ? savedData.notes.filter((item) => item && typeof item.id === 'string' && typeof item.content === 'string').slice(0, 1000) : [],
     collections: Array.isArray(savedData.collections) ? savedData.collections.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.items)).slice(0, 300) : [],
     researchItems: researchLibrary.sanitizeStoredItems(savedData.researchItems),
+    securityEvents: privacyAudit.sanitizeSecurityEvents(savedData.securityEvents),
     themeProfiles: themeStudio.sanitizeThemeProfiles(savedData.themeProfiles),
     workspaceThemeProfiles: savedData.workspaceThemeProfiles && typeof savedData.workspaceThemeProfiles === 'object' && !Array.isArray(savedData.workspaceThemeProfiles) ? Object.fromEntries(Object.entries(savedData.workspaceThemeProfiles).filter(([workspaceId, themeId]) => safeWorkspacesWithFallback.some((workspace) => workspace.id === workspaceId) && typeof themeId === 'string')) : {},
     sessions: Array.isArray(savedData.sessions) ? savedData.sessions.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.tabs)).slice(0, 100) : [],
@@ -765,8 +781,9 @@ function restartBrowserInMode(useSafeMode = false) {
     saveData();
     markRuntimeCleanShutdown();
     passwordVault?.lock();
-    const args = process.argv.slice(1).filter((argument) => argument !== '--safe-mode');
+    const args = process.argv.slice(1).filter((argument) => argument !== '--safe-mode' && !argument.startsWith('--secure-dns-provider='));
     if (useSafeMode) args.push('--safe-mode');
+    if (settings.secureDnsProvider && settings.secureDnsProvider !== 'system') args.push('--secure-dns-provider=' + settings.secureDnsProvider);
     app.relaunch({ args });
     app.exit(0);
     return { ok: true };
@@ -955,6 +972,9 @@ function getPublicState() {
     workspaceThemeProfiles: { ...(data.workspaceThemeProfiles || {}) },
     themePreviewActive: Boolean(previewThemeProfileId),
     themePreviewProfileId: previewThemeProfileId,
+    privacyAudit: privacyAudit.summarizePrivacyState({ permissions: data.permissions, extensions: getExtensionList() }),
+    securityEvents: (data.securityEvents || []).slice(0, 100),
+    secureDnsProvider: settings.secureDnsProvider || 'system',
     responsiveViewport: responsiveViewport ? { ...responsiveViewport } : null,
     defaultEngine: browserEngineManager.defaultEngineId,
     availableEngines: browserEngineManager.listEngines()
@@ -2413,6 +2433,7 @@ function setSitePermission(origin, permission, allowed, expiryHours = 0) {
   const key = `${safeOrigin}|${permission}`;
   const hours = Number(expiryHours);
   if (Number.isFinite(hours) && hours > 0) data.permissionExpiry[key] = Date.now() + Math.min(8760, hours) * 3600000; else delete data.permissionExpiry[key];
+  recordSecurityEvent('site-permission', allowed ? 'Site permission allowed' : 'Site permission denied', permission, safeOrigin);
   saveData();
   sendState();
   return { ok: true };
@@ -3008,6 +3029,52 @@ function isTrustedSettingsSender(event) {
   return Boolean(settingsWindow && !settingsWindow.isDestroyed() && event.sender === settingsWindow.webContents);
 }
 
+
+function recordSecurityEvent(type, title, detail, origin = '') {
+  const entry = { id: makeId('security-event'), type: String(type || 'event').slice(0, 48), title: String(title || 'Security event').slice(0, 120), detail: String(detail || '').slice(0, 500), at: Date.now(), origin: getOrigin(origin) };
+  data.securityEvents = [entry, ...(data.securityEvents || [])].slice(0, 200);
+  saveData();
+  return entry;
+}
+
+function findWindowsDefenderCli() {
+  if (process.platform !== 'win32') return '';
+  const roots = [
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Windows Defender'),
+    path.join(process.env.ProgramData || 'C:\\ProgramData', 'Microsoft', 'Windows Defender', 'Platform')
+  ];
+  for (const root of roots) {
+    try {
+      const candidates = fs.readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() || entry.isFile())
+        .map((entry) => path.join(root, entry.name))
+        .flatMap((entryPath) => [entryPath, path.join(entryPath, 'MpCmdRun.exe')]);
+      const match = candidates.find((candidate) => path.basename(candidate).toLowerCase() === 'mpcmdrun.exe' && fs.existsSync(candidate));
+      if (match) return match;
+    } catch {}
+  }
+  return '';
+}
+
+async function scanDownloadedFile(downloadId) {
+  const item = (data.downloads || []).find((entry) => entry.id === String(downloadId));
+  if (!item || item.state !== 'completed' || !item.filePath || !path.isAbsolute(item.filePath) || !fs.existsSync(item.filePath)) return { ok: false, error: 'Choose a completed download that still exists on disk.' };
+  const scanner = findWindowsDefenderCli();
+  if (!scanner) return { ok: false, error: 'Microsoft Defender command-line scanner was not found. This optional scan is currently supported on Windows only.' };
+  try {
+    const result = await new Promise((resolve, reject) => execFile(scanner, ['-Scan', '-ScanType', '3', '-File', item.filePath], { timeout: 120000, windowsHide: true, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) return reject(new Error((stderr || stdout || error.message).toString().slice(0, 1000)));
+      resolve(String(stdout || stderr || 'Scan completed.'));
+    }));
+    recordSecurityEvent('download-scan', 'Download scan completed', path.basename(item.filePath) + ': ' + result);
+    sendState();
+    return { ok: true, message: result };
+  } catch (error) {
+    recordSecurityEvent('download-scan-error', 'Download scan failed', path.basename(item.filePath) + ': ' + error.message);
+    sendState();
+    return { ok: false, error: 'Microsoft Defender scan failed: ' + error.message };
+  }
+}
 
 function addBrowserNotification(title, body, url = '') {
   const entry = { id: makeId('notification'), title: String(title || 'Browser notification').slice(0, 100), body: String(body || '').slice(0, 500), url: isSafeWebUrl(url) ? url : '', createdAt: Date.now(), read: false };
@@ -3901,6 +3968,15 @@ async function runPanelAction(action, payload = {}) {
         return result ? { ok: true, result } : { ok: false, error: 'Select text on the page, then inspect its styling.' };
       } catch (error) { return { ok: false, error: error.message }; }
     }
+    case 'get-security-audit':
+      return { ok: true, audit: privacyAudit.summarizePrivacyState({ permissions: data.permissions, extensions: getExtensionList() }), events: data.securityEvents || [] };
+    case 'set-secure-dns-provider': {
+      const provider = privacyAudit.normalizeSecureDnsProvider(payload.provider);
+      settings.secureDnsProvider = provider; saveSettings();
+      recordSecurityEvent('secure-dns', 'Secure DNS preference changed', provider === 'system' ? 'Using operating-system DNS settings.' : 'Secure DNS via ' + provider + ' will be enabled after restart.');
+      sendState(); return { ok: true, provider, restartRequired: true };
+    }
+    case 'scan-download': return scanDownloadedFile(payload.id);
     case 'capture-research-article': return captureResearchArticle();
     case 'open-research-item': return openResearchItem(payload.id);
     case 'delete-research-item':
@@ -4008,6 +4084,7 @@ async function runPanelAction(action, payload = {}) {
     case 'download-resume': return pauseResumeCancelDownload(payload.id, 'resume');
     case 'download-cancel': return pauseResumeCancelDownload(payload.id, 'cancel');
     case 'download-open': return openDownloadedFile(payload.id, false);
+    case 'scan-download': return scanDownloadedFile(payload.id);
     case 'download-show': return openDownloadedFile(payload.id, true);
     case 'download-clear-completed':
       data.downloads = data.downloads.filter((item) => activeDownloads.has(item.id) || item.state === 'progressing' || item.state === 'paused');
