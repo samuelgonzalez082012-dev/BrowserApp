@@ -18,7 +18,7 @@ The source currently includes a sizeable portion of the roadmap already. The sta
 | Release | Existing foundations in V2.2 | Remaining work to qualify as complete |
 |---|---|---|
 | V2.2 Advanced Tab Ecosystem | Persistent and temporary containers, profile-specific partitions, domain rules, most-specific rule selection, tab moves, container UI, private/guest handling. | Regression-test isolation, restore, permissions, downloads, and workspace interactions; address documented move/reload state loss where technically possible; document unavoidable session boundaries. |
-| V2.3 Media & Downloads | Download history, progress updates, pause/resume/cancel, open/reveal, folder selection, optional automatic category folders. | Queueing and concurrency policy, scheduling, duplicate detection, searchable history, throughput history/graphs, integrity metadata, cleanup rules, and global media controls. |
+| V2.3 Media & Downloads | Download history, progress updates, pause/resume/cancel, open/reveal, folder selection, optional automatic category folders, bounded FIFO queue and configurable 1–10 concurrency. | Scheduling, duplicate detection, searchable history, throughput history/graphs, integrity metadata, cleanup rules, and global media controls. Queueing/concurrency has been added on this branch and still needs Electron runtime verification. |
 | V2.4 Research & Knowledge | Reader view, notes, collections, page capture, journeys and saved sessions. | Durable article snapshots, offline article reading, selected-section clipping, highlights/annotations, source references, full-text indexing/search, version comparison, and collection export. |
 | V2.5 Personalization Studio | Theme presets, accent colors, custom accent, fonts, density, corner styles, tab/sidebar sizing, toolbar visibility/order, new-tab options. | Visual layout editor, workspace-specific appearance profiles, theme import/export/library, custom CSS-variable editor with validation, and preview/rollback. |
 | V2.6 Developer & Creator Tools | DevTools access, page source, developer panel, screenshot capture/annotation, PDF export. | Network request inspector, responsive viewport mode, device presets, JSON viewer, font/color inspection, structured page inspector, and creator capture/recording workflows. |
@@ -92,5 +92,6 @@ The existing repository's README and V2.2 changelog explicitly distinguish sourc
 ## Current completion status
 
 - V2.2 source baseline: present; hardening and regression validation remain.
-- V2.3–V3.0: foundations exist in several areas; remaining work is not yet implemented by this baseline commit.
+- V2.3: bounded FIFO download queue and configurable concurrency are implemented on this branch; remaining media/download features and Electron runtime verification are outstanding.
+- V2.4–V3.0: foundations exist in several areas; remaining work is not yet implemented by this baseline commit.
 - No release in this roadmap should be labelled complete solely because its navigation entry or settings control exists.

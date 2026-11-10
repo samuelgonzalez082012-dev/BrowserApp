@@ -48,6 +48,8 @@ main.js                 Main process, tabs, windows, profiles, persistence,
 password-vault.js       Local encrypted password-vault implementation.
 download-queue.js       Bounded FIFO scheduler for simultaneous downloads.
 container-routing.js    Pure container domain normalization and routing helpers.
+download-queue.js       Bounded FIFO scheduler for simultaneous downloads.
+V2.3-CHANGELOG.txt      V2.3 download queue implementation and validation notes.
 test/                   Node.js unit tests for engine adapters and container routing.
 index.html              Browser chrome, tabs, address bar and toolbar controls.
 styles.css              Browser chrome and global visual styling.
