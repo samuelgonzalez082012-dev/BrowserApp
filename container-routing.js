@@ -4,8 +4,8 @@
 function normalizeContainerDomain(value) {
   let input = String(value || '').trim().toLowerCase();
   if (!input) return '';
-  input = input.replace(/^https?:\\/\\//, '').split(/[/?#:]/)[0].replace(/^\\*\\./, '').replace(/^\\./, '').replace(/\\.$/, '');
-  const validHostname = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+  input = input.replace(/^https?:\/\//, '').split(/[/?#:]/)[0].replace(/^\*\./, '').replace(/^\./, '').replace(/\.$/, '');
+  const validHostname = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
   return validHostname.test(input) ? input : '';
 }
 
