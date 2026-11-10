@@ -18,7 +18,7 @@ class WindowsWindowHost extends EventEmitter {
 
   _ensureProcess() {
     if (this.platform !== 'win32') throw new Error('Native Firefox window embedding is currently Windows-only.');
-    if (this.child && this.child.exitCode === null) return;
+    if (this.child && this.child.exitCode === null && !this.child.killed) return;
     this.child = this.spawnProcess('powershell.exe', [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', this.scriptPath
     ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -27,7 +27,7 @@ class WindowsWindowHost extends EventEmitter {
     this.child.stderr.setEncoding('utf8');
     this.child.stderr.on('data', (chunk) => this.emit('diagnostic', chunk.trim()));
     this.child.on('error', (error) => this._failAll(error));
-    this.child.on('exit', (code) => this._failAll(new Error(\`Windows window host exited (code \${code}).\`)));
+    this.child.on('exit', (code) => this._failAll(new Error('Windows window host exited (code ' + code + ').')));
   }
 
   _onStdout(chunk) {
@@ -63,10 +63,10 @@ class WindowsWindowHost extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(\`Windows window-host operation timed out: \${operation}\`));
+        reject(new Error('Windows window-host operation timed out: ' + operation));
       }, 8000);
       this.pending.set(id, { resolve, reject, timeout });
-      this.child.stdin.write(\`\${JSON.stringify({ id, operation, ...payload })}\n\`, (error) => {
+      this.child.stdin.write(JSON.stringify({ id, operation, ...payload }) + '\n', (error) => {
         if (error) {
           clearTimeout(timeout);
           this.pending.delete(id);
@@ -79,18 +79,9 @@ class WindowsWindowHost extends EventEmitter {
   attach({ processId, parentHandle, bounds }) {
     return this._request('attach', { processId, parentHandle: String(parentHandle), bounds });
   }
-
-  setBounds(bounds) {
-    return this._request('resize', { bounds });
-  }
-
-  focus() {
-    return this._request('focus');
-  }
-
-  detach() {
-    return this._request('detach');
-  }
+  setBounds(bounds) { return this._request('resize', { bounds }); }
+  focus() { return this._request('focus'); }
+  detach() { return this._request('detach'); }
 
   async close() {
     if (!this.child) return;
