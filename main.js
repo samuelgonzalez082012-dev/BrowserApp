@@ -683,7 +683,7 @@ function readPersistence() {
   };
   // Electron DownloadItem instances cannot be restored across application launches.
   // Never leave persisted transfers looking active after a restart.
-  data.downloads = data.downloads.map((item) => ['progressing', 'queued', 'paused'].includes(item.state)
+  data.downloads = data.downloads.map((item) => ['progressing', 'queued', 'paused', 'scheduled'].includes(item.state)
     ? { ...item, state: 'interrupted', queued: false }
     : item);
   if (savedData.permissions && typeof savedData.permissions === 'object' && !Array.isArray(savedData.permissions)) {
@@ -2299,6 +2299,8 @@ function startPromotedDownloads(ids = []) {
       continue;
     }
     record.queued = false;
+    record.scheduled = false;
+    record.scheduledAt = 0;
     record.state = 'progressing';
     try { active.item.resume(); }
     catch (error) { record.state = 'interrupted'; console.warn('Could not resume queued download:', error.message); }
@@ -2321,6 +2323,8 @@ function pauseResumeCancelDownload(downloadId, action) {
       const started = downloadQueue.resume(id);
       if (record) {
         record.queued = !started;
+        record.scheduled = false;
+        record.scheduledAt = 0;
         record.state = started ? 'progressing' : 'queued';
       }
       if (started) item.resume();
