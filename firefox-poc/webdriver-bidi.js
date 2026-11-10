@@ -23,8 +23,8 @@ class WebDriverBidiClient extends EventEmitter {
       if (this.closed) throw new Error('The WebDriver BiDi client was closed.');
       try {
         await this._openSocket();
-        const result = await this.command('session.new', { capabilities: { alwaysMatch: {} } });
-        this.session = result?.sessionId || null;
+        const response = await this.command('session.new', { capabilities: { alwaysMatch: {} } });
+        this.session = response.result?.sessionId || null;
         await this.command('session.subscribe', {
           events: [
             'browsingContext.navigationStarted',
@@ -37,7 +37,7 @@ class WebDriverBidiClient extends EventEmitter {
             'browsingContext.contextDestroyed'
           ]
         });
-        return result;
+        return response;
       } catch (error) {
         lastError = error;
         this._disposeSocket();
@@ -81,7 +81,6 @@ class WebDriverBidiClient extends EventEmitter {
     let message;
     try { message = JSON.parse(typeof raw === 'string' ? raw : String(raw)); }
     catch { return; }
-
     if (message.type === 'event') {
       this.emit('event', message);
       this.emit(message.method, message.params || {});
@@ -92,15 +91,12 @@ class WebDriverBidiClient extends EventEmitter {
     if (!pending) return;
     this.pending.delete(message.id);
     clearTimeout(pending.timeout);
-    if (message.type === 'error') {
-      pending.reject(new Error(\`\${message.error || 'BiDi error'}: \${message.message || 'Command failed'}\`));
-    } else pending.resolve(message);
+    if (message.type === 'error') pending.reject(new Error(\`\${message.error || 'BiDi error'}: \${message.message || 'Command failed'}\`));
+    else pending.resolve(message);
   }
 
   command(method, params = {}) {
-    if (!this.socket || this.socket.readyState !== 1) {
-      return Promise.reject(new Error('Firefox WebDriver BiDi is not connected.'));
-    }
+    if (!this.socket || this.socket.readyState !== 1) return Promise.reject(new Error('Firefox WebDriver BiDi is not connected.'));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -118,40 +114,28 @@ class WebDriverBidiClient extends EventEmitter {
   }
 
   async getTopLevelContext() {
-    const result = await this.command('browsingContext.getTree', { maxDepth: 0 });
-    const context = (result.contexts || []).find((item) => !item.parent);
+    const response = await this.command('browsingContext.getTree', { maxDepth: 0 });
+    const context = (response.result?.contexts || []).find((item) => !item.parent);
     if (!context?.context) throw new Error('Firefox started, but no top-level browsing context was found.');
     return context.context;
   }
 
-  navigate(context, url) {
-    return this.command('browsingContext.navigate', { context, url, wait: 'none' });
-  }
-
-  reload(context) {
-    return this.command('browsingContext.reload', { context, wait: 'none' });
-  }
-
-  stop(context) {
-    return this.command('browsingContext.stopLoad', { context });
-  }
+  navigate(context, url) { return this.command('browsingContext.navigate', { context, url, wait: 'none' }); }
+  reload(context) { return this.command('browsingContext.reload', { context, wait: 'none' }); }
+  stop(context) { return this.command('browsingContext.stopLoad', { context }); }
 
   async evaluate(context, expression) {
-    const result = await this.command('script.evaluate', {
-      expression: String(expression),
-      target: { context },
-      awaitPromise: true,
-      resultOwnership: 'none'
+    const response = await this.command('script.evaluate', {
+      expression: String(expression), target: { context }, awaitPromise: true, resultOwnership: 'none'
     });
-    if (result.result?.type === 'exception') {
-      throw new Error(result.result.exceptionDetails?.text || 'Firefox script evaluation failed.');
-    }
-    return result.result?.result?.value;
+    if (response.result?.exceptionDetails) throw new Error(response.result.exceptionDetails.text || 'Firefox script evaluation failed.');
+    return response.result?.result?.value;
   }
 
   async screenshot(context) {
-    const result = await this.command('browsingContext.captureScreenshot', { context });
-    return Buffer.from(result.data, 'base64');
+    const response = await this.command('browsingContext.captureScreenshot', { context });
+    if (!response.result?.data) throw new Error('Firefox did not return a screenshot.');
+    return Buffer.from(response.result.data, 'base64');
   }
 
   async close() {
