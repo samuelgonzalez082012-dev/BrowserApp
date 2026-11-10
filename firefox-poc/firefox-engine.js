@@ -10,7 +10,7 @@ const { WindowsWindowHost } = require('./windows-window-host');
 function normalizeWebUrl(value) {
   const input = String(value || '').trim();
   if (!input) throw new Error('Enter a website address.');
-  const candidate = /^[a-z][a-z\d+.-]*:/i.test(input) ? input : \`https://\${input}\`;
+  const candidate = /^[a-z][a-z\d+.-]*:/i.test(input) ? input : 'https://' + input;
   let parsed;
   try { parsed = new URL(candidate); } catch { throw new Error('Enter a valid website address.'); }
   if (!['http:', 'https:'].includes(parsed.protocol)) {
@@ -133,7 +133,7 @@ class FirefoxEngineTab extends EventEmitter {
   isAudioMuted() { return false; }
   setAudioMuted() {}
   setZoomFactor(factor) {
-    if (!this.isDestroyed()) this.executeJavaScript(\`document.documentElement.style.zoom = \${JSON.stringify(String(Number(factor) || 1))}\`).catch(() => {});
+    if (!this.isDestroyed()) this.executeJavaScript('document.documentElement.style.zoom = ' + JSON.stringify(String(Number(factor) || 1))).catch(() => {});
   }
 
   get navigationHistory() {
@@ -157,7 +157,7 @@ class FirefoxEngineTab extends EventEmitter {
 
   _navigateHistory(url) {
     if (this.isDestroyed()) return;
-    this.client.evaluate(this.contextId, \`location.href = \${JSON.stringify(url)}\`).catch(() => {});
+    this.client.evaluate(this.contextId, 'location.href = ' + JSON.stringify(url)).catch(() => {});
   }
 
   on(eventName, listener) {
@@ -225,7 +225,8 @@ class FirefoxEngineTab extends EventEmitter {
     return this.client.evaluate(this.contextId, String(source));
   }
   async insertCSS(css) {
-    const source = \`(() => { const style = document.createElement('style'); style.textContent = \${JSON.stringify(String(css))}; document.documentElement.appendChild(style); return true; })()\`;
+    const source = '(() => { const style = document.createElement("style"); style.textContent = ' +
+      JSON.stringify(String(css)) + '; document.documentElement.appendChild(style); return true; })()';
     return this.executeJavaScript(source);
   }
   async capturePage() {
@@ -237,7 +238,7 @@ class FirefoxEngineTab extends EventEmitter {
   getProcessMemoryInfo() { return Promise.resolve(null); }
   viewSource() {
     if (this._url.startsWith('http:') || this._url.startsWith('https:')) {
-      this.client.navigate(this.contextId, \`view-source:\${this._url}\`).catch(() => {});
+      this.client.navigate(this.contextId, 'view-source:' + this._url).catch(() => {});
     }
   }
   async printToPDF() { throw new Error('PDF export is not implemented in the Firefox proof of concept.'); }
