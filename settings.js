@@ -42,7 +42,7 @@ async function loadSettings() {
     $('custom-accent').dataset.enabled = String(Boolean(savedSettings.customAccent));
     $('font-family').value = savedSettings.fontFamily || 'system'; $('corner-style').value = savedSettings.cornerStyle || 'soft';
     $('density').value = savedSettings.density || 'comfortable'; $('compact-tabs').value = String(Boolean(savedSettings.compactTabs));
-    $('new-tab-background').value = savedSettings.newTabBackground || 'default'; $('search-engine').value = savedSettings.searchEngine || 'google';
+    $('new-tab-background').value = savedSettings.newTabBackground || 'default'; $('search-engine').value = savedSettings.searchEngine || 'brave';
     $('auto-sleep').value = String(savedSettings.autoSleepMinutes || 0); $('animations').checked = savedSettings.animations !== false;
     $('tracker-blocking').checked = Boolean(savedSettings.trackerBlocking); $('cookie-banner-filtering').checked = Boolean(savedSettings.cookieBannerFiltering);
     $('show-clock').checked = savedSettings.showClock !== false; $('show-favorites').checked = savedSettings.showFavorites !== false; $('show-recent').checked = savedSettings.showRecent !== false; $('show-notes').checked = savedSettings.showNotes !== false; $('show-sessions').checked = savedSettings.showSessions !== false;
