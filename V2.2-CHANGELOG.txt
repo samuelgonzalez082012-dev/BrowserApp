@@ -61,3 +61,13 @@ VALIDATION
 
 No package.json, node_modules, or installation scripts are included. Import the source
 files into the existing Electron Fiddle project as described in README.txt.
+
+CONTAINER ROUTING TESTABILITY
+- Extracted domain normalization and URL-to-container routing into the
+  Electron-independent container-routing.js module.
+- Added node:test coverage for normalization, malformed domains, exact matches,
+  optional subdomain matching, most-specific rule priority, disabled/stale
+  rules, invalid/non-web URLs and fallback behavior.
+- The seven isolated container-routing tests passed under Node.js.
+- Live Electron session isolation and UI smoke tests remain required; these
+  unit tests do not replace the V2.2 runtime checklist.
