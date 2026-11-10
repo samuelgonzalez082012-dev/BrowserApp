@@ -54,13 +54,19 @@ public static class BrowserAppNativeWindow {
         uint parentPid;
         uint childThread = GetWindowThreadProcessId(child, out childPid);
         uint parentThread = GetWindowThreadProcessId(parent, out parentPid);
-        bool attached = false;
+        uint currentThread = GetCurrentThreadId();
+        bool attachedParent = false;
+        bool attachedCurrent = false;
         if (childThread != 0 && parentThread != 0 && childThread != parentThread) {
-            attached = AttachThreadInput(parentThread, childThread, true);
+            attachedParent = AttachThreadInput(parentThread, childThread, true);
+        }
+        if (childThread != 0 && currentThread != 0 && childThread != currentThread) {
+            attachedCurrent = AttachThreadInput(currentThread, childThread, true);
         }
         bool foreground = SetForegroundWindow(child);
         SetFocus(child);
-        if (attached) AttachThreadInput(parentThread, childThread, false);
+        if (attachedCurrent) AttachThreadInput(currentThread, childThread, false);
+        if (attachedParent) AttachThreadInput(parentThread, childThread, false);
         return foreground;
     }
 }
