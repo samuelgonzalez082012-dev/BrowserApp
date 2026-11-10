@@ -125,7 +125,9 @@ while ($line = [Console]::In.ReadLine()) {
         $result = Invoke-Operation $request
         $response = @{ id = $request.id; ok = $true; result = $result }
     } catch {
-        $response = @{ id = if ($request) { $request.id } else { 0 }; ok = $false; error = $_.Exception.Message }
+        $responseId = 0
+        if ($request) { $responseId = $request.id }
+        $response = @{ id = $responseId; ok = $false; error = $_.Exception.Message }
     }
     [Console]::Out.WriteLine(($response | ConvertTo-Json -Compress -Depth 6))
 }
