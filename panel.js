@@ -146,11 +146,12 @@ function renderHistory() {
 function renderDownloads() {
   const downloads = state.downloads || [];
   const rows = downloads.map((item) => {
-    const inProgress = ['progressing', 'paused', 'interrupted'].includes(item.state);
+    const inProgress = ['progressing', 'paused', 'interrupted', 'queued'].includes(item.state);
     const isDone = item.state === 'completed';
     const progress = Math.max(0, Math.min(100, Number(item.percent) || 0));
     let controls = '';
-    if (item.state === 'progressing') controls = `${actionButton('Pause', 'download-pause', item.id)} ${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
+    if (item.state === 'queued') controls = `${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
+    else if (item.state === 'progressing') controls = `${actionButton('Pause', 'download-pause', item.id)} ${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
     else if (item.state === 'paused') controls = `${actionButton('Resume', 'download-resume', item.id)} ${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
     else if (item.state === 'interrupted' && item.canResume) controls = `${actionButton('Resume', 'download-resume', item.id)} ${actionButton('Cancel', 'download-cancel', item.id, 'danger-button')}`;
     else if (item.state === 'interrupted') controls = '<span class="muted-note">Interrupted — restart from the source website.</span>';

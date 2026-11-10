@@ -1,0 +1,31 @@
+MINIMAL CHROMIUM BROWSER — V2.3 CHANGELOG
+Media & Downloads
+
+NEW
+- Added a bounded FIFO download scheduler with a default concurrency of three
+  active transfers and a hard maximum of ten.
+- Excess downloads are paused and represented as Queued until a slot is free.
+- Completed, cancelled and non-resumable interrupted transfers release their
+  slot and promote the oldest queued transfer.
+- Manually pausing a transfer frees a slot for queued work.
+- Resuming a paused/interrupted transfer respects the concurrency limit and
+  returns it to the queue when all slots are occupied.
+- Queued downloads can be cancelled from the Downloads panel.
+
+ENGINEERING
+- Queue state is isolated in download-queue.js and does not expose Electron
+  DownloadItem objects to the renderer.
+- Added node:test coverage for FIFO promotion, pause/resume, bounded limits,
+  concurrency changes, duplicate IDs and unknown jobs.
+
+LIMITATIONS
+- The queue is currently in-memory. A browser restart cannot resume an active
+  Electron DownloadItem; persisted records remain subject to Electron's native
+  interrupted-download behavior.
+- Concurrency defaults to three and is not yet configurable in Settings.
+- Throughput graphs, scheduling, duplicate detection, file integrity metadata,
+  advanced history search and global media controls remain future V2.3 work.
+
+VALIDATION
+- Seven isolated download-queue unit tests passed under Node.js.
+- Full Electron runtime download testing is still required.

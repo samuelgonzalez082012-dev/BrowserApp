@@ -46,6 +46,7 @@ main.js                 Main process, tabs, windows, profiles, persistence,
                         downloads, privacy, ad blocking, backups, connected
                         service shortcuts, workflows, updates and IPC.
 password-vault.js       Local encrypted password-vault implementation.
+download-queue.js       Bounded FIFO scheduler for simultaneous downloads.
 container-routing.js    Pure container domain normalization and routing helpers.
 test/                   Node.js unit tests for engine adapters and container routing.
 index.html              Browser chrome, tabs, address bar and toolbar controls.
