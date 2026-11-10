@@ -40,6 +40,66 @@ class MockWebSocket extends EventTarget {
   }
 }
 
+class SubscribeFailureWebSocket extends EventTarget {
+  constructor() {
+    super();
+    this.readyState = 0;
+    this.methods = [];
+    queueMicrotask(() => {
+      this.readyState = 1;
+      this.dispatchEvent(new Event('open'));
+    });
+  }
+
+  send(raw) {
+    const command = JSON.parse(raw);
+    this.methods.push(command.method);
+    queueMicrotask(() => {
+      const message = command.method === 'session.subscribe'
+        ? { type: 'error', id: command.id, error: 'invalid argument', message: 'Unsupported event' }
+        : { type: 'success', id: command.id, result: command.method === 'session.new' ? { sessionId: 'session-1' } : {} };
+      this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
+    });
+  }
+
+  close() {
+    this.readyState = 3;
+    this.dispatchEvent(new Event('close'));
+  }
+}
+
+class ActiveSessionWebSocket extends EventTarget {
+  constructor() {
+    super();
+    this.readyState = 0;
+    this.sessionNewCount = 0;
+    queueMicrotask(() => {
+      this.readyState = 1;
+      this.dispatchEvent(new Event('open'));
+    });
+  }
+
+  send(raw) {
+    const command = JSON.parse(raw);
+    if (command.method === 'session.new') this.sessionNewCount += 1;
+    queueMicrotask(() => {
+      this.dispatchEvent(new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'error',
+          id: command.id,
+          error: 'session not created',
+          message: 'Maximum number of active sessions'
+        })
+      }));
+    });
+  }
+
+  close() {
+    this.readyState = 3;
+    this.dispatchEvent(new Event('close'));
+  }
+}
+
 test('Firefox discovery honors an explicit executable override', () => {
   const executable = path.win32.join('C:', 'Apps', 'Firefox', 'firefox.exe');
   const found = resolveFirefoxExecutable({
@@ -94,5 +154,43 @@ test('WebDriver BiDi client parses command results and screenshot payloads', asy
   assert.equal(await client.getTopLevelContext(), 'context-1');
   assert.equal(await client.evaluate('context-1', 'document.title'), 'Example title');
   assert.equal((await client.screenshot('context-1')).toString(), 'png');
+  await client.close();
+});
+
+
+test('WebDriver BiDi releases a session if event subscription fails', async () => {
+  let socket;
+  class CapturingSocket extends SubscribeFailureWebSocket {
+    constructor() {
+      super();
+      socket = this;
+    }
+  }
+  const client = new WebDriverBidiClient({
+    websocketUrl: 'ws://127.0.0.1:4444/session',
+    WebSocketImpl: CapturingSocket,
+    commandTimeoutMs: 1000
+  });
+  await assert.rejects(client.connect({ attempts: 1 }), /Unsupported event/);
+  assert.deepEqual(socket.methods, ['session.new', 'session.subscribe', 'session.end']);
+  assert.equal(client.session, null);
+  await client.close();
+});
+
+test('WebDriver BiDi does not retry session.new when Firefox reports an active session', async () => {
+  let socket;
+  class CapturingSocket extends ActiveSessionWebSocket {
+    constructor() {
+      super();
+      socket = this;
+    }
+  }
+  const client = new WebDriverBidiClient({
+    websocketUrl: 'ws://127.0.0.1:4444/session',
+    WebSocketImpl: CapturingSocket,
+    commandTimeoutMs: 1000
+  });
+  await assert.rejects(client.connect({ attempts: 5, retryDelayMs: 0 }), /already has an active WebDriver BiDi session/);
+  assert.equal(socket.sessionNewCount, 1);
   await client.close();
 });
