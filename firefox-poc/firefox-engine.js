@@ -250,6 +250,7 @@ class FirefoxEngineTab extends EventEmitter {
     if (this._closed) return;
     this._closed = true;
     try { await this.host.detach(); } catch {}
+    try { await this.host.close(); } catch {}
     try { await this.client?.command('browser.close', {}); } catch {}
     try { await this.client?.close(); } catch {}
     await this.launcher.close();
